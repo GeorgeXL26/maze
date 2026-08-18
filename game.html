@@ -85,6 +85,14 @@ async function main() {
   window.addEventListener('keydown', function (e) { if (keyMap[e.code]) input[keyMap[e.code]] = true; });
   window.addEventListener('keyup', function (e) { if (keyMap[e.code]) input[keyMap[e.code]] = false; });
 
+  window.addEventListener('keydown', function (e) {
+    if (e.code === 'KeyE' && lastLitTorchIndex !== -1) {
+      var t = mazeData.torches[lastLitTorchIndex];
+      playerPos.x = t.x;
+      playerPos.z = t.y;
+    }
+  });
+
   var clock = new THREE.Clock();
   var PLAYER_SPEED = 2.5;
   var PLAYER_RADIUS = 0.3;
