@@ -5,10 +5,11 @@
 <title>Torch Maze — 地图编辑器</title>
 <style>
   body { font-family: sans-serif; margin: 0; display: flex; }
-  #toolbar { padding: 12px; display: flex; flex-direction: column; gap: 6px; width: 160px; }
+  #toolbar { padding: 12px; display: flex; flex-direction: column; gap: 6px; width: 160px; flex-shrink: 0; }
   #toolbar button { padding: 8px; cursor: pointer; }
   #toolbar button.active { background: #ffd966; font-weight: bold; }
-  canvas { border: 1px solid #333; image-rendering: pixelated; }
+  #canvasWrap { overflow: auto; width: 100%; height: 100vh; }
+  canvas { border: 1px solid #333; image-rendering: pixelated; cursor: crosshair; }
 </style>
 </head>
 <body>
@@ -21,17 +22,20 @@
   <button data-tool="start">起点 (Start)</button>
   <button data-tool="exit">终点 (Exit)</button>
   <hr>
-  <div>网格尺寸</div>
+  <div>网格尺寸（最大 200x200）</div>
   <div style="display:flex; gap:4px;">
-    <input id="widthInput" type="number" value="15" min="3" max="60" style="width:50px;">
-    <input id="heightInput" type="number" value="15" min="3" max="60" style="width:50px;">
+    <input id="widthInput" type="number" value="15" min="3" max="200" style="width:50px;">
+    <input id="heightInput" type="number" value="15" min="3" max="200" style="width:50px;">
     <button id="resizeBtn">调整</button>
   </div>
   <hr>
   <button id="exportBtn">导出 JSON</button>
   <input id="importInput" type="file" accept="application/json">
+  <div style="font-size:12px; color:#666;">提示：拖动已放置的火把/道具/起点/终点图标可以移动它们；单击可以放置/删除。</div>
 </div>
+<div id="canvasWrap">
 <canvas id="grid" width="480" height="480"></canvas>
+</div>
 <script src="shared/maze-schema.js"></script>
 <script src="shared/level-io.js"></script>
 <script src="shared/editor-grid.js"></script>
@@ -50,17 +54,76 @@
     });
   });
 
-  function paintAt(evt) {
+  function cellFromEvent(evt) {
     var rect = canvas.getBoundingClientRect();
-    var cell = window.EditorGrid.pixelToCell(evt.clientX - rect.left, evt.clientY - rect.top, CELL_SIZE);
+    return window.EditorGrid.pixelToCell(evt.clientX - rect.left, evt.clientY - rect.top, CELL_SIZE);
+  }
+
+  function paintAt(evt) {
+    var cell = cellFromEvent(evt);
     window.EditorGrid.applyTool(data, currentTool, cell.x, cell.y);
     render();
   }
 
+  function findEntityAt(x, y) {
+    if (data.start.x === x && data.start.y === y) return { kind: 'start' };
+    if (data.exit.x === x && data.exit.y === y) return { kind: 'exit' };
+    for (var i = 0; i < data.torches.length; i++) {
+      if (data.torches[i].x === x && data.torches[i].y === y) return { kind: 'torch', index: i };
+    }
+    for (var i = 0; i < data.items.length; i++) {
+      if (data.items[i].x === x && data.items[i].y === y) return { kind: 'item', index: i };
+    }
+    return null;
+  }
+
+  function moveEntity(entity, x, y) {
+    if (x < 0 || y < 0 || x >= data.width || y >= data.height) return;
+    if (entity.kind === 'start') data.start = { x: x, y: y };
+    else if (entity.kind === 'exit') data.exit = { x: x, y: y };
+    else if (entity.kind === 'torch') { data.torches[entity.index].x = x; data.torches[entity.index].y = y; }
+    else if (entity.kind === 'item') { data.items[entity.index].x = x; data.items[entity.index].y = y; }
+  }
+
   var painting = false;
-  canvas.addEventListener('mousedown', function (e) { painting = true; paintAt(e); });
-  window.addEventListener('mouseup', function () { painting = false; });
-  canvas.addEventListener('mousemove', function (e) { if (painting) paintAt(e); });
+  var dragState = null;
+
+  canvas.addEventListener('mousedown', function (e) {
+    var cell = cellFromEvent(e);
+    var entity = findEntityAt(cell.x, cell.y);
+    if (entity) {
+      dragState = { entity: entity, x: cell.x, y: cell.y, moved: false };
+    } else {
+      painting = true;
+      paintAt(e);
+    }
+  });
+
+  canvas.addEventListener('mousemove', function (e) {
+    if (dragState) {
+      var cell = cellFromEvent(e);
+      if (cell.x !== dragState.x || cell.y !== dragState.y) {
+        dragState.moved = true;
+        dragState.x = cell.x;
+        dragState.y = cell.y;
+        moveEntity(dragState.entity, cell.x, cell.y);
+        render();
+      }
+    } else if (painting) {
+      paintAt(e);
+    }
+  });
+
+  window.addEventListener('mouseup', function () {
+    if (dragState && !dragState.moved) {
+      // Plain click on an existing marker (no drag): fall back to the
+      // active tool's click behavior (e.g. toggling it off).
+      window.EditorGrid.applyTool(data, currentTool, dragState.x, dragState.y);
+      render();
+    }
+    dragState = null;
+    painting = false;
+  });
 
   function render() {
     canvas.width = data.width * CELL_SIZE;
