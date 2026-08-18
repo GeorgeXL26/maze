@@ -4,6 +4,7 @@
 <body>
 <pre id="out"></pre>
 <script src="../shared/maze-schema.js"></script>
+<script src="../shared/toon-renderer.js"></script>
 <script>
   var results = [];
   function assertEqual(actual, expected, label) {
@@ -25,7 +26,11 @@
   assertEqual(window.MazeSchema.isWalkable(validData, 0, 0), false, 'isWalkable false on wall cell');
   assertEqual(window.MazeSchema.isWalkable(validData, 99, 0), false, 'isWalkable false out of bounds');
 
-  function FakeVec3() { this.x=0;this.y=0;this.z=0; this.set=function(x,y,z){this.x=x;this.y=y;this.z=z;return this;}; }
+  function FakeVec3() {
+    this.x=0;this.y=0;this.z=0;
+    this.set=function(x,y,z){this.x=x;this.y=y;this.z=z;return this;};
+    this.copy=function(v){this.x=v.x;this.y=v.y;this.z=v.z;return this;};
+  }
   function FakeGroup() { this.children=[]; this.add=function(o){this.children.push(o);}; }
   function FakeMesh(geo, mat) { this.geometry=geo; this.material=mat; this.position=new FakeVec3(); this.rotation=new FakeVec3(); this.scale=new FakeVec3(); this.userData={}; }
   var FakeTHREE = {
@@ -41,6 +46,21 @@
   assertEqual(walls.length, 1, 'buildMazeMesh creates one wall mesh per # cell');
   assertEqual(floors.length, 1, 'buildMazeMesh creates exactly one floor mesh');
   assertEqual([walls[0].position.x, walls[0].position.z], [1, 0], 'wall mesh placed at grid (x,y) -> world (x,0,z=y)');
+
+  FakeTHREE.MeshToonMaterial = function (opts) { this.color = opts.color; this.gradientMap = opts.gradientMap; };
+  FakeTHREE.MeshBasicMaterial = function (opts) { this.color = opts.color; this.side = opts.side; };
+  FakeTHREE.DataTexture = function (data, w, h, fmt) { this.data=data; this.width=w; this.height=h; this.format=fmt; };
+  FakeTHREE.RedFormat = 'red'; FakeTHREE.NearestFilter = 'nearest'; FakeTHREE.BackSide = 'back';
+
+  var toonMat = window.ToonRenderer.createToonMaterial(0xff0000, FakeTHREE);
+  assertEqual(toonMat.color, 0xff0000, 'createToonMaterial sets color');
+  assertTrue(toonMat.gradientMap instanceof FakeTHREE.DataTexture, 'createToonMaterial attaches a gradient map');
+
+  var srcMesh = new FakeMesh({}, {});
+  srcMesh.position.set(2, 0, 3);
+  var outlineMesh = window.ToonRenderer.createOutlineMesh(srcMesh, FakeTHREE, 0.1);
+  assertEqual([outlineMesh.position.x, outlineMesh.position.z], [2, 3], 'createOutlineMesh copies source position');
+  assertEqual(outlineMesh.material.side, 'back', 'createOutlineMesh uses BackSide material');
 
   document.getElementById('out').textContent = results.join('\n');
   results.forEach(function (r) { console.log(r); });
