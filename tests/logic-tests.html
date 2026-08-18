@@ -6,6 +6,7 @@
 <script src="../shared/maze-schema.js"></script>
 <script src="../shared/toon-renderer.js"></script>
 <script src="../shared/player-controller.js"></script>
+<script src="../shared/level-io.js"></script>
 <script>
   var results = [];
   function assertEqual(actual, expected, label) {
@@ -99,6 +100,19 @@
 
   assertTrue(!window.PlayerController.checkWin({x:7,z:7}, {x:7,y:7}, 1, 2, 0.5), 'checkWin false when items not all collected');
   assertTrue(window.PlayerController.checkWin({x:7,z:7}, {x:7,y:7}, 2, 2, 0.5), 'checkWin true at exit with all items collected');
+
+  var defLevel = window.LevelIO.createDefaultLevel(5, 4);
+  assertEqual(defLevel.cells, ['#####', '#...#', '#...#', '#####'], 'createDefaultLevel builds a bordered rectangle');
+  assertEqual(defLevel.exit, {x:3,y:2}, 'createDefaultLevel places exit at bottom-right interior corner');
+
+  var roundTrip = window.LevelIO.parseLevelJSON(window.LevelIO.exportLevelJSON(defLevel));
+  assertTrue(roundTrip.ok, 'exportLevelJSON -> parseLevelJSON round-trips a valid level');
+
+  var badParse = window.LevelIO.parseLevelJSON('not json');
+  assertTrue(!badParse.ok, 'parseLevelJSON rejects invalid JSON text');
+
+  var invalidLevel = window.LevelIO.parseLevelJSON(JSON.stringify({width:1}));
+  assertTrue(!invalidLevel.ok, 'parseLevelJSON rejects JSON missing required fields');
 
   document.getElementById('out').textContent = results.join('\n');
   results.forEach(function (r) { console.log(r); });
