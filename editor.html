@@ -1,8 +1,8 @@
 <!DOCTYPE html>
-<html lang="zh">
+<html lang="en">
 <head>
 <meta charset="utf-8">
-<title>Torch Maze — 地图编辑器</title>
+<title>Torch Maze — Level Editor</title>
 <style>
   html, body { margin: 0; height: 100%; overflow: hidden; background: #1a1a20; }
   body { display: flex; font-family: sans-serif; }
@@ -36,31 +36,31 @@
 </head>
 <body>
 <div id="toolbar">
-  <div class="section-title">工具面板</div>
+  <div class="section-title">Tools</div>
   <div id="palette">
-    <div class="palette-item active" data-tool="wall" draggable="true"><span class="icon">🧱</span><span class="label">墙</span></div>
-    <div class="palette-item" data-tool="floor" draggable="true"><span class="icon">⬜</span><span class="label">地板</span></div>
-    <div class="palette-item" data-tool="torch" draggable="true"><span class="icon">🔥</span><span class="label">火把</span></div>
-    <div class="palette-item" data-tool="item" draggable="true"><span class="icon">🪙</span><span class="label">道具</span></div>
-    <div class="palette-item" data-tool="start" draggable="true"><span class="icon">🟢</span><span class="label">起点</span></div>
-    <div class="palette-item" data-tool="exit" draggable="true"><span class="icon">🔴</span><span class="label">终点</span></div>
-    <div class="palette-item" data-tool="pan"><span class="icon">✋</span><span class="label">移动视角</span></div>
+    <div class="palette-item active" data-tool="wall" draggable="true"><span class="icon">🧱</span><span class="label">Wall</span></div>
+    <div class="palette-item" data-tool="floor" draggable="true"><span class="icon">⬜</span><span class="label">Floor</span></div>
+    <div class="palette-item" data-tool="torch" draggable="true"><span class="icon">🔥</span><span class="label">Torch</span></div>
+    <div class="palette-item" data-tool="item" draggable="true"><span class="icon">🪙</span><span class="label">Item</span></div>
+    <div class="palette-item" data-tool="start" draggable="true"><span class="icon">🟢</span><span class="label">Start</span></div>
+    <div class="palette-item" data-tool="exit" draggable="true"><span class="icon">🔴</span><span class="label">Exit</span></div>
+    <div class="palette-item" data-tool="pan"><span class="icon">✋</span><span class="label">Pan</span></div>
   </div>
   <hr>
-  <div class="section-title">网格尺寸（最大 200x200）</div>
+  <div class="section-title">Grid Size (max 200x200)</div>
   <div style="display:flex; gap:4px;">
     <input id="widthInput" type="number" value="15" min="3" max="200" style="width:50px;">
     <input id="heightInput" type="number" value="15" min="3" max="200" style="width:50px;">
-    <button class="action" id="resizeBtn">调整</button>
+    <button class="action" id="resizeBtn">Resize</button>
   </div>
   <hr>
-  <button class="action" id="exportBtn">导出 JSON</button>
+  <button class="action" id="exportBtn">Export JSON</button>
   <input id="importInput" type="file" accept="application/json">
   <hr>
   <div style="font-size:12px; color:#555;">
-    从上方拖动图标到地图上放置；也可先点选工具再左键点击/拖动绘制。<br>
-    拖动已放置的火把·道具·起点·终点可移动它们。<br>
-    选中"移动视角"或按右键拖动可平移；滚轮缩放。
+    Drag an icon from above onto the map to place it, or select a tool then left-click/drag to paint.<br>
+    Drag a placed torch, item, start, or exit marker to move it.<br>
+    Select "Pan" or right-click drag to pan the view; scroll to zoom.
   </div>
 </div>
 <div id="viewport"></div>
@@ -402,7 +402,7 @@ document.getElementById('importInput').addEventListener('change', function (e) {
   var reader = new FileReader();
   reader.onload = function () {
     var result = window.LevelIO.parseLevelJSON(reader.result);
-    if (!result.ok) { alert('导入失败：' + result.errors.join(', ')); return; }
+    if (!result.ok) { alert('Import failed: ' + result.errors.join(', ')); return; }
     data = result.data;
     document.getElementById('widthInput').value = data.width;
     document.getElementById('heightInput').value = data.height;

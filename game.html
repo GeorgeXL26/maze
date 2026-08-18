@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="zh">
+<html lang="en">
 <head>
 <meta charset="utf-8">
 <title>Torch Maze</title>
@@ -20,7 +20,7 @@
 <body>
 <div id="loader" style="position:fixed; top:10px; right:10px; color:#fff; font-family:sans-serif;">
   <input id="customLevelInput" type="file" accept="application/json">
-  <div style="font-size:12px;">选择自定义关卡 JSON（不选则加载默认关卡）</div>
+  <div style="font-size:12px;">Choose a custom level JSON (leave empty to load the default level)</div>
 </div>
 <div id="hud">Loading...</div>
 <script src="shared/maze-schema.js"></script>
@@ -288,8 +288,8 @@ async function startGame(mazeData) {
     }
 
     document.getElementById('hud').textContent =
-      gameWon ? '通关！收集 ' + collectedCount + '/' + mazeData.items.length
-              : '道具 ' + collectedCount + '/' + mazeData.items.length + ' — WASD 移动，E 传送回火把';
+      gameWon ? 'Cleared! Collected ' + collectedCount + '/' + mazeData.items.length
+              : 'Items ' + collectedCount + '/' + mazeData.items.length + ' — WASD to move, E to return to last torch';
 
     var fowCenters = [{ x: playerPos.x, z: playerPos.z, r: PLAYER_VISIBILITY_RADIUS }];
     torchObjects.forEach(function (t) {
@@ -312,7 +312,7 @@ document.getElementById('customLevelInput').addEventListener('change', function 
   var file = e.target.files[0];
   if (!file) return;
   loadCustomLevel(file).then(startGame).catch(function (err) {
-    alert('关卡加载失败：' + err.message);
+    alert('Failed to load level: ' + err.message);
   });
 });
 
