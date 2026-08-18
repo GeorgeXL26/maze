@@ -1,0 +1,32 @@
+<!DOCTYPE html>
+<html>
+<head><meta charset="utf-8"><title>Torch Maze — Logic Tests</title></head>
+<body>
+<pre id="out"></pre>
+<script src="../shared/maze-schema.js"></script>
+<script>
+  var results = [];
+  function assertEqual(actual, expected, label) {
+    var pass = JSON.stringify(actual) === JSON.stringify(expected);
+    results.push((pass ? 'PASS' : 'FAIL') + ' — ' + label +
+      (pass ? '' : ' (expected ' + JSON.stringify(expected) + ', got ' + JSON.stringify(actual) + ')'));
+  }
+  function assertTrue(actual, label) { assertEqual(!!actual, true, label); }
+
+  // maze-schema tests
+  var validData = {
+    width: 3, height: 2, cells: ['#.#', '...'],
+    torches: [], items: [], start: {x:1,y:0}, exit: {x:1,y:1},
+    monsters: [], equipment: []
+  };
+  assertTrue(window.MazeSchema.validateMazeData(validData).valid, 'validateMazeData accepts well-formed data');
+  assertTrue(!window.MazeSchema.validateMazeData({}).valid, 'validateMazeData rejects empty object');
+  assertTrue(window.MazeSchema.isWalkable(validData, 1, 0), 'isWalkable true on floor cell');
+  assertEqual(window.MazeSchema.isWalkable(validData, 0, 0), false, 'isWalkable false on wall cell');
+  assertEqual(window.MazeSchema.isWalkable(validData, 99, 0), false, 'isWalkable false out of bounds');
+
+  document.getElementById('out').textContent = results.join('\n');
+  results.forEach(function (r) { console.log(r); });
+</script>
+</body>
+</html>
