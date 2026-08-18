@@ -5,6 +5,7 @@
 <pre id="out"></pre>
 <script src="../shared/maze-schema.js"></script>
 <script src="../shared/toon-renderer.js"></script>
+<script src="../shared/player-controller.js"></script>
 <script>
   var results = [];
   function assertEqual(actual, expected, label) {
@@ -74,6 +75,20 @@
   window.ToonRenderer.updateFollowCamera(cam, { x: 4, y: 0, z: 6 });
   assertEqual([cam.position.x, cam.position.y, cam.position.z], [4, 9, 15], 'updateFollowCamera offsets from target');
   assertEqual(cam.lookAtCalls[0], [4, 0, 6], 'updateFollowCamera looks at target');
+
+  var mv = window.PlayerController.computeMove({x:0,z:0}, {forward:true,left:false,right:false,back:false}, 1, 2);
+  assertEqual(mv, {x:0,z:-2}, 'computeMove: forward moves -z at given speed');
+
+  var diag = window.PlayerController.computeMove({x:0,z:0}, {forward:true,right:true,left:false,back:false}, 1, 1);
+  assertTrue(Math.abs(diag.x - 0.707) < 0.01 && Math.abs(diag.z + 0.707) < 0.01, 'computeMove: diagonal input is normalized');
+
+  var collideMaze = { width: 3, height: 3, cells: ['###', '#.#', '###'] };
+  var blockedMove = window.PlayerController.resolveCollision({x:1,z:1}, {x:1.9,z:1}, 0.3, collideMaze);
+  assertTrue(blockedMove.x < 1.9, 'resolveCollision stops player before entering wall cell');
+
+  var openMaze = { width: 3, height: 1, cells: ['...'] };
+  var freeMove = window.PlayerController.resolveCollision({x:1,z:0}, {x:1.5,z:0}, 0.3, openMaze);
+  assertEqual(freeMove, {x:1.5,z:0}, 'resolveCollision allows movement through open floor');
 
   document.getElementById('out').textContent = results.join('\n');
   results.forEach(function (r) { console.log(r); });
