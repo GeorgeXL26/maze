@@ -62,6 +62,19 @@
   assertEqual([outlineMesh.position.x, outlineMesh.position.z], [2, 3], 'createOutlineMesh copies source position');
   assertEqual(outlineMesh.material.side, 'back', 'createOutlineMesh uses BackSide material');
 
+  FakeTHREE.PerspectiveCamera = function (fov, aspect) {
+    this.fov = fov; this.aspect = aspect; this.userData = {};
+    this.position = new FakeVec3();
+    this.lookAtCalls = [];
+    this.lookAt = function (x, y, z) { this.lookAtCalls.push([x, y, z]); };
+  };
+
+  var cam = window.ToonRenderer.createFollowCamera(FakeTHREE, 1.5);
+  assertEqual(cam.fov, 35, 'createFollowCamera sets fov 35');
+  window.ToonRenderer.updateFollowCamera(cam, { x: 4, y: 0, z: 6 });
+  assertEqual([cam.position.x, cam.position.y, cam.position.z], [4, 9, 15], 'updateFollowCamera offsets from target');
+  assertEqual(cam.lookAtCalls[0], [4, 0, 6], 'updateFollowCamera looks at target');
+
   document.getElementById('out').textContent = results.join('\n');
   results.forEach(function (r) { console.log(r); });
 </script>

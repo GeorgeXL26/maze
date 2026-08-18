@@ -27,9 +27,23 @@ window.ToonRenderer = (function () {
     return outline;
   }
 
+  function createFollowCamera(THREE, aspect) {
+    var camera = new THREE.PerspectiveCamera(35, aspect, 0.1, 100);
+    camera.userData.offset = { x: 0, y: 9, z: 9 };
+    return camera;
+  }
+
+  function updateFollowCamera(camera, targetPos) {
+    var off = camera.userData.offset;
+    camera.position.set(targetPos.x + off.x, targetPos.y + off.y, targetPos.z + off.z);
+    camera.lookAt(targetPos.x, targetPos.y, targetPos.z);
+  }
+
   return {
     createGradientMap: createGradientMap,
     createToonMaterial: createToonMaterial,
-    createOutlineMesh: createOutlineMesh
+    createOutlineMesh: createOutlineMesh,
+    createFollowCamera: createFollowCamera,
+    updateFollowCamera: updateFollowCamera
   };
 })();
