@@ -43,9 +43,34 @@ window.MazeSchema = (function () {
     return row[x] === '.';
   }
 
+  function buildMazeMesh(data, THREE) {
+    var group = new THREE.Group();
+    var wallGeo = new THREE.BoxGeometry(1, 1.2, 1);
+    for (var y = 0; y < data.height; y++) {
+      for (var x = 0; x < data.width; x++) {
+        if (data.cells[y][x] === '#') {
+          var wall = new THREE.Mesh(wallGeo, new THREE.MeshStandardMaterial({ color: 0x888899 }));
+          wall.position.set(x, 0.6, y);
+          wall.userData.type = 'wall';
+          wall.userData.gridX = x;
+          wall.userData.gridY = y;
+          group.add(wall);
+        }
+      }
+    }
+    var floorGeo = new THREE.PlaneGeometry(data.width, data.height);
+    var floor = new THREE.Mesh(floorGeo, new THREE.MeshStandardMaterial({ color: 0x445544 }));
+    floor.rotation.x = -Math.PI / 2;
+    floor.position.set((data.width - 1) / 2, 0, (data.height - 1) / 2);
+    floor.userData.type = 'floor';
+    group.add(floor);
+    return group;
+  }
+
   return {
     parseCells: parseCells,
     validateMazeData: validateMazeData,
-    isWalkable: isWalkable
+    isWalkable: isWalkable,
+    buildMazeMesh: buildMazeMesh
   };
 })();

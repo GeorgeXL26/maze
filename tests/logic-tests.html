@@ -25,6 +25,23 @@
   assertEqual(window.MazeSchema.isWalkable(validData, 0, 0), false, 'isWalkable false on wall cell');
   assertEqual(window.MazeSchema.isWalkable(validData, 99, 0), false, 'isWalkable false out of bounds');
 
+  function FakeVec3() { this.x=0;this.y=0;this.z=0; this.set=function(x,y,z){this.x=x;this.y=y;this.z=z;return this;}; }
+  function FakeGroup() { this.children=[]; this.add=function(o){this.children.push(o);}; }
+  function FakeMesh(geo, mat) { this.geometry=geo; this.material=mat; this.position=new FakeVec3(); this.rotation=new FakeVec3(); this.scale=new FakeVec3(); this.userData={}; }
+  var FakeTHREE = {
+    Group: FakeGroup, Mesh: FakeMesh,
+    BoxGeometry: function(){}, PlaneGeometry: function(){},
+    MeshStandardMaterial: function(){}
+  };
+
+  var maze3 = { width: 2, height: 1, cells: ['.#'] };
+  var mesh = window.MazeSchema.buildMazeMesh(maze3, FakeTHREE);
+  var walls = mesh.children.filter(function (c) { return c.userData.type === 'wall'; });
+  var floors = mesh.children.filter(function (c) { return c.userData.type === 'floor'; });
+  assertEqual(walls.length, 1, 'buildMazeMesh creates one wall mesh per # cell');
+  assertEqual(floors.length, 1, 'buildMazeMesh creates exactly one floor mesh');
+  assertEqual([walls[0].position.x, walls[0].position.z], [1, 0], 'wall mesh placed at grid (x,y) -> world (x,0,z=y)');
+
   document.getElementById('out').textContent = results.join('\n');
   results.forEach(function (r) { console.log(r); });
 </script>
