@@ -43,14 +43,25 @@ window.MazeSchema = (function () {
     return row[x] === '.';
   }
 
-  function buildMazeMesh(data, THREE) {
+  function buildMazeMesh(data, THREE, wallTemplate) {
     var group = new THREE.Group();
-    var wallGeo = new THREE.BoxGeometry(1, 1.2, 1);
+    var wallGeo = wallTemplate ? null : new THREE.BoxGeometry(1, 1.2, 1);
+    function isWallCell(x, y) {
+      if (x < 0 || y < 0 || x >= data.width || y >= data.height) return false;
+      return data.cells[y][x] === '#';
+    }
     for (var y = 0; y < data.height; y++) {
       for (var x = 0; x < data.width; x++) {
         if (data.cells[y][x] === '#') {
-          var wall = new THREE.Mesh(wallGeo, new THREE.MeshStandardMaterial({ color: 0x888899 }));
-          wall.position.set(x, 0.6, y);
+          var wall = wallTemplate
+            ? wallTemplate.clone()
+            : new THREE.Mesh(wallGeo, new THREE.MeshStandardMaterial({ color: 0x888899 }));
+          wall.position.set(x, wallTemplate ? 0 : 0.6, y);
+          // wallTemplate is a flat directional panel (wide along X, thin along Z);
+          // rotate 90 deg so runs of cells stacked along Y (world Z) connect edge-to-edge.
+          var vertical = (isWallCell(x, y - 1) || isWallCell(x, y + 1)) &&
+                         !(isWallCell(x - 1, y) || isWallCell(x + 1, y));
+          wall.rotation.y = vertical ? Math.PI / 2 : 0;
           wall.userData.type = 'wall';
           wall.userData.gridX = x;
           wall.userData.gridY = y;
