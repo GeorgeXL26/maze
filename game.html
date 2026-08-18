@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<title>Torch Maze</title>
+<style>
+  html, body { margin: 0; height: 100%; overflow: hidden; background: #000; }
+  canvas { display: block; }
+  #hud { position: fixed; top: 10px; left: 10px; color: #fff; font-family: sans-serif; text-shadow: 0 0 4px #000; }
+</style>
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://unpkg.com/three@0.160.0/build/three.module.js"
+  }
+}
+</script>
+</head>
+<body>
+<div id="hud">Loading...</div>
+<script src="shared/maze-schema.js"></script>
+<script src="shared/toon-renderer.js"></script>
+<script src="shared/player-controller.js"></script>
+<script type="module">
+import * as THREE from 'three';
+
+async function loadDefaultLevel() {
+  var res = await fetch('levels/default.json');
+  return res.json();
+}
+
+async function main() {
+  var mazeData = await loadDefaultLevel();
+  var check = window.MazeSchema.validateMazeData(mazeData);
+  if (!check.valid) { console.error('Invalid level:', check.errors); return; }
+
+  var renderer = new THREE.WebGLRenderer({ antialias: true });
+  renderer.setSize(window.innerWidth, window.innerHeight);
+  document.body.appendChild(renderer.domElement);
+
+  var scene = new THREE.Scene();
+  scene.background = new THREE.Color(0x05050a);
+
+  var camera = window.ToonRenderer.createFollowCamera(THREE, window.innerWidth / window.innerHeight);
+
+  var mazeMesh = window.MazeSchema.buildMazeMesh(mazeData, THREE);
+  scene.add(mazeMesh);
+
+  var ambient = new THREE.AmbientLight(0x445566, 1.5);
+  scene.add(ambient);
+
+  var playerPos = { x: mazeData.start.x, z: mazeData.start.y };
+  window.ToonRenderer.updateFollowCamera(camera, { x: playerPos.x, y: 0, z: playerPos.z });
+
+  window.addEventListener('resize', function () {
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    camera.aspect = window.innerWidth / window.innerHeight;
+    camera.updateProjectionMatrix();
+  });
+
+  document.getElementById('hud').textContent = 'Torch Maze — level loaded';
+
+  function animate() {
+    requestAnimationFrame(animate);
+    renderer.render(scene, camera);
+  }
+  animate();
+}
+
+main();
+</script>
+</body>
+</html>
