@@ -228,9 +228,9 @@ function rebuildAll() {
 }
 
 Promise.all([
-  loadModel('assets/models/wall.gltf'),
-  loadModel('assets/models/torch.gltf'),
-  loadModel('assets/models/coin.gltf')
+  loadModel('assets/kaykit-dungeon/gltf/wall.gltf'),
+  loadModel('assets/kaykit-dungeon/gltf/torch.gltf'),
+  loadModel('assets/kaykit-dungeon/gltf/coin.gltf')
 ]).then(function (models) {
   wallTemplate = models[0];
   wallTemplate.scale.set(WALL_SCALE, WALL_SCALE, WALL_SCALE);

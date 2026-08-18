@@ -117,20 +117,20 @@ async function startGame(mazeData) {
   var PLAYER_SCALE = 0.41;
   var PLAYER_FOOT_OFFSET = 0.42 * PLAYER_SCALE;
 
-  var wallTemplate = await loadModel('assets/models/wall.gltf');
+  var wallTemplate = await loadModel('assets/kaykit-dungeon/gltf/wall.gltf');
   wallTemplate.scale.set(WALL_SCALE, WALL_SCALE, WALL_SCALE);
-  var torchUnlitTemplate = await loadModel('assets/models/torch.gltf');
-  var torchLitTemplate = await loadModel('assets/models/torch_lit.gltf');
-  var coinTemplate = await loadModel('assets/models/coin.gltf');
-  var knightTemplate = await loadModel('assets/models/Knight.glb');
+  var torchUnlitTemplate = await loadModel('assets/kaykit-dungeon/gltf/torch.gltf');
+  var torchLitTemplate = await loadModel('assets/kaykit-dungeon/gltf/torch_lit.gltf');
+  var coinTemplate = await loadModel('assets/kaykit-dungeon/gltf/coin.gltf');
+  var knightTemplate = await loadModel('assets/kaykit-adventurers/characters/Knight.glb');
   knightTemplate.scale.set(PLAYER_SCALE, PLAYER_SCALE, PLAYER_SCALE);
 
   [wallTemplate, torchUnlitTemplate, torchLitTemplate, coinTemplate, knightTemplate].forEach(function (tpl) {
     collectMaterials(tpl).forEach(applyFogOfWar);
   });
 
-  var idleGltf = await gltfLoader.loadAsync('assets/models/Rig_Medium_General.glb');
-  var walkGltf = await gltfLoader.loadAsync('assets/models/Rig_Medium_MovementBasic.glb');
+  var idleGltf = await gltfLoader.loadAsync('assets/kaykit-adventurers/animations/Rig_Medium_General.glb');
+  var walkGltf = await gltfLoader.loadAsync('assets/kaykit-adventurers/animations/Rig_Medium_MovementBasic.glb');
   var idleClip = idleGltf.animations.find(function (a) { return a.name === 'Idle_A'; });
   var walkClip = walkGltf.animations.find(function (a) { return a.name === 'Walking_A'; });
 
