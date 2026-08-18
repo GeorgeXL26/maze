@@ -4,13 +4,23 @@
 <meta charset="utf-8">
 <title>Torch Maze — 地图编辑器</title>
 <style>
-  body { font-family: sans-serif; margin: 0; display: flex; }
-  #toolbar { padding: 12px; display: flex; flex-direction: column; gap: 6px; width: 160px; flex-shrink: 0; }
+  html, body { margin: 0; height: 100%; overflow: hidden; background: #1a1a20; }
+  body { display: flex; font-family: sans-serif; }
+  #toolbar { padding: 12px; display: flex; flex-direction: column; gap: 6px; width: 170px; flex-shrink: 0; background: #f0f0f0; overflow-y: auto; }
   #toolbar button { padding: 8px; cursor: pointer; }
   #toolbar button.active { background: #ffd966; font-weight: bold; }
-  #canvasWrap { overflow: auto; width: 100%; height: 100vh; }
-  canvas { border: 1px solid #333; image-rendering: pixelated; cursor: crosshair; }
+  #viewport { position: relative; flex: 1; }
+  canvas { display: block; cursor: crosshair; }
+  #hint { position: fixed; bottom: 8px; left: 178px; color: #ccc; font-size: 12px; font-family: sans-serif; }
 </style>
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+    "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+  }
+}
+</script>
 </head>
 <body>
 <div id="toolbar">
@@ -31,160 +41,320 @@
   <hr>
   <button id="exportBtn">导出 JSON</button>
   <input id="importInput" type="file" accept="application/json">
-  <div style="font-size:12px; color:#666;">提示：拖动已放置的火把/道具/起点/终点图标可以移动它们；单击可以放置/删除。</div>
+  <hr>
+  <div style="font-size:12px; color:#555;">
+    左键：绘制 / 拖动已放置的火把·道具·起点·终点<br>
+    右键拖动：平移视角　滚轮：缩放
+  </div>
 </div>
-<div id="canvasWrap">
-<canvas id="grid" width="480" height="480"></canvas>
-</div>
+<div id="viewport"></div>
 <script src="shared/maze-schema.js"></script>
 <script src="shared/level-io.js"></script>
 <script src="shared/editor-grid.js"></script>
-<script>
-  var CELL_SIZE = 32;
-  var data = window.LevelIO.createDefaultLevel(15, 15);
-  var currentTool = window.EditorGrid.TOOLS.WALL;
-  var canvas = document.getElementById('grid');
-  var ctx = canvas.getContext('2d');
+<script type="module">
+import * as THREE from 'three';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 
-  document.querySelectorAll('#toolbar button').forEach(function (btn) {
-    btn.addEventListener('click', function () {
-      document.querySelectorAll('#toolbar button').forEach(function (b) { b.classList.remove('active'); });
-      btn.classList.add('active');
-      currentTool = btn.dataset.tool;
-    });
+var WALL_SCALE = 0.25;
+
+var data = window.LevelIO.createDefaultLevel(15, 15);
+var currentTool = window.EditorGrid.TOOLS.WALL;
+
+document.querySelectorAll('#toolbar button[data-tool]').forEach(function (btn) {
+  btn.addEventListener('click', function () {
+    document.querySelectorAll('#toolbar button[data-tool]').forEach(function (b) { b.classList.remove('active'); });
+    btn.classList.add('active');
+    currentTool = btn.dataset.tool;
+  });
+});
+
+var viewport = document.getElementById('viewport');
+var renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setSize(viewport.clientWidth, viewport.clientHeight);
+viewport.appendChild(renderer.domElement);
+
+var scene = new THREE.Scene();
+scene.background = new THREE.Color(0x1a1a20);
+
+var camera = new THREE.PerspectiveCamera(45, viewport.clientWidth / viewport.clientHeight, 0.1, 500);
+
+var controls = new OrbitControls(camera, renderer.domElement);
+controls.mouseButtons = { LEFT: null, MIDDLE: THREE.MOUSE.DOLLY, RIGHT: THREE.MOUSE.PAN };
+controls.enableRotate = false;
+controls.screenSpacePanning = true;
+
+function frameCamera() {
+  var cx = (data.width - 1) / 2, cz = (data.height - 1) / 2;
+  var span = Math.max(data.width, data.height);
+  var fovRad = camera.fov * Math.PI / 180;
+  var viewDist = (span / 2) / Math.tan(fovRad / 2) * 1.15; // 1.15 = margin
+  var dist = viewDist / Math.SQRT2;
+  controls.target.set(cx, 0, cz);
+  camera.position.set(cx, dist, cz + dist);
+  camera.near = 0.1;
+  camera.far = dist * 4 + 50;
+  camera.updateProjectionMatrix();
+  controls.update();
+}
+
+var ambient = new THREE.AmbientLight(0xffffff, 2.2);
+scene.add(ambient);
+var dirLight = new THREE.DirectionalLight(0xffffff, 1.2);
+dirLight.position.set(5, 10, 7);
+scene.add(dirLight);
+
+var gltfLoader = new GLTFLoader();
+function loadModel(path) {
+  return gltfLoader.loadAsync(path).then(function (gltf) { return gltf.scene; });
+}
+
+var wallTemplate, torchTemplate, coinTemplate;
+var floorMesh = null;
+var wallMeshes = {}; // "x,y" -> mesh
+var torchMeshes = [];
+var itemMeshes = [];
+var startMarker, exitMarker;
+
+function makeMarker(color) {
+  var geo = new THREE.ConeGeometry(0.28, 0.5, 6);
+  var mat = new THREE.MeshStandardMaterial({ color: color });
+  var mesh = new THREE.Mesh(geo, mat);
+  mesh.position.y = 0.3;
+  return mesh;
+}
+
+function wallKey(x, y) { return x + ',' + y; }
+
+function setWallCell(x, y) {
+  if (x < 0 || y < 0 || x >= data.width || y >= data.height) return;
+  var key = wallKey(x, y);
+  var existing = wallMeshes[key];
+  if (existing) {
+    scene.remove(existing);
+    delete wallMeshes[key];
+  }
+  if (data.cells[y][x] === '#') {
+    var mesh = wallTemplate.clone();
+    mesh.position.set(x, 0, y);
+    mesh.rotation.y = window.MazeSchema.computeWallRotationY(data, x, y);
+    scene.add(mesh);
+    wallMeshes[key] = mesh;
+  }
+}
+
+function refreshWallArea(x, y) {
+  setWallCell(x, y);
+  setWallCell(x - 1, y);
+  setWallCell(x + 1, y);
+  setWallCell(x, y - 1);
+  setWallCell(x, y + 1);
+}
+
+function rebuildFloor() {
+  if (floorMesh) scene.remove(floorMesh);
+  var geo = new THREE.PlaneGeometry(data.width, data.height);
+  var mat = new THREE.MeshStandardMaterial({ color: 0x556655 });
+  floorMesh = new THREE.Mesh(geo, mat);
+  floorMesh.rotation.x = -Math.PI / 2;
+  floorMesh.position.set((data.width - 1) / 2, -0.01, (data.height - 1) / 2);
+  scene.add(floorMesh);
+}
+
+function rebuildWalls() {
+  Object.keys(wallMeshes).forEach(function (k) { scene.remove(wallMeshes[k]); });
+  wallMeshes = {};
+  for (var y = 0; y < data.height; y++) {
+    for (var x = 0; x < data.width; x++) {
+      if (data.cells[y][x] === '#') setWallCell(x, y);
+    }
+  }
+}
+
+function rebuildMarkers() {
+  torchMeshes.forEach(function (m) { scene.remove(m); });
+  torchMeshes = data.torches.map(function (t) {
+    var mesh = torchTemplate.clone();
+    mesh.position.set(t.x, 0, t.y);
+    scene.add(mesh);
+    return mesh;
   });
 
-  function cellFromEvent(evt) {
-    var rect = canvas.getBoundingClientRect();
-    return window.EditorGrid.pixelToCell(evt.clientX - rect.left, evt.clientY - rect.top, CELL_SIZE);
+  itemMeshes.forEach(function (m) { scene.remove(m); });
+  itemMeshes = data.items.map(function (it) {
+    var mesh = coinTemplate.clone();
+    mesh.position.set(it.x, 0.15, it.y);
+    scene.add(mesh);
+    return mesh;
+  });
+
+  startMarker.position.set(data.start.x, 0.3, data.start.y);
+  exitMarker.position.set(data.exit.x, 0.3, data.exit.y);
+}
+
+function rebuildAll() {
+  rebuildFloor();
+  rebuildWalls();
+  rebuildMarkers();
+  frameCamera();
+}
+
+Promise.all([
+  loadModel('assets/models/wall.gltf'),
+  loadModel('assets/models/torch.gltf'),
+  loadModel('assets/models/coin.gltf')
+]).then(function (models) {
+  wallTemplate = models[0];
+  wallTemplate.scale.set(WALL_SCALE, WALL_SCALE, WALL_SCALE);
+  torchTemplate = models[1];
+  coinTemplate = models[2];
+
+  startMarker = makeMarker(0x22cc55);
+  exitMarker = makeMarker(0xcc2255);
+  scene.add(startMarker);
+  scene.add(exitMarker);
+
+  rebuildAll();
+  animate();
+});
+
+// --- Picking: raycast against the y=0 ground plane, round to nearest cell center ---
+var raycaster = new THREE.Raycaster();
+var groundPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
+
+function cellFromEvent(evt) {
+  var rect = renderer.domElement.getBoundingClientRect();
+  var ndc = new THREE.Vector2(
+    ((evt.clientX - rect.left) / rect.width) * 2 - 1,
+    -((evt.clientY - rect.top) / rect.height) * 2 + 1
+  );
+  raycaster.setFromCamera(ndc, camera);
+  var hit = new THREE.Vector3();
+  var didHit = raycaster.ray.intersectPlane(groundPlane, hit);
+  if (!didHit) return null;
+  return { x: Math.round(hit.x), y: Math.round(hit.z) };
+}
+
+function findEntityAt(x, y) {
+  if (data.start.x === x && data.start.y === y) return { kind: 'start' };
+  if (data.exit.x === x && data.exit.y === y) return { kind: 'exit' };
+  for (var i = 0; i < data.torches.length; i++) {
+    if (data.torches[i].x === x && data.torches[i].y === y) return { kind: 'torch', index: i };
   }
-
-  function paintAt(evt) {
-    var cell = cellFromEvent(evt);
-    window.EditorGrid.applyTool(data, currentTool, cell.x, cell.y);
-    render();
+  for (var i = 0; i < data.items.length; i++) {
+    if (data.items[i].x === x && data.items[i].y === y) return { kind: 'item', index: i };
   }
+  return null;
+}
 
-  function findEntityAt(x, y) {
-    if (data.start.x === x && data.start.y === y) return { kind: 'start' };
-    if (data.exit.x === x && data.exit.y === y) return { kind: 'exit' };
-    for (var i = 0; i < data.torches.length; i++) {
-      if (data.torches[i].x === x && data.torches[i].y === y) return { kind: 'torch', index: i };
-    }
-    for (var i = 0; i < data.items.length; i++) {
-      if (data.items[i].x === x && data.items[i].y === y) return { kind: 'item', index: i };
-    }
-    return null;
+function moveEntity(entity, x, y) {
+  if (x < 0 || y < 0 || x >= data.width || y >= data.height) return;
+  if (entity.kind === 'start') { data.start = { x: x, y: y }; startMarker.position.set(x, 0.3, y); }
+  else if (entity.kind === 'exit') { data.exit = { x: x, y: y }; exitMarker.position.set(x, 0.3, y); }
+  else if (entity.kind === 'torch') {
+    data.torches[entity.index].x = x; data.torches[entity.index].y = y;
+    torchMeshes[entity.index].position.set(x, 0, y);
+  } else if (entity.kind === 'item') {
+    data.items[entity.index].x = x; data.items[entity.index].y = y;
+    itemMeshes[entity.index].position.set(x, 0.15, y);
   }
+}
 
-  function moveEntity(entity, x, y) {
-    if (x < 0 || y < 0 || x >= data.width || y >= data.height) return;
-    if (entity.kind === 'start') data.start = { x: x, y: y };
-    else if (entity.kind === 'exit') data.exit = { x: x, y: y };
-    else if (entity.kind === 'torch') { data.torches[entity.index].x = x; data.torches[entity.index].y = y; }
-    else if (entity.kind === 'item') { data.items[entity.index].x = x; data.items[entity.index].y = y; }
+function applyToolAt(x, y) {
+  window.EditorGrid.applyTool(data, currentTool, x, y);
+  if (currentTool === window.EditorGrid.TOOLS.WALL || currentTool === window.EditorGrid.TOOLS.FLOOR) {
+    refreshWallArea(x, y);
+  } else {
+    rebuildMarkers();
   }
+}
 
-  var painting = false;
-  var dragState = null;
+var painting = false;
+var dragState = null;
 
-  canvas.addEventListener('mousedown', function (e) {
+renderer.domElement.addEventListener('contextmenu', function (e) { e.preventDefault(); });
+
+renderer.domElement.addEventListener('mousedown', function (e) {
+  if (e.button !== 0 || !wallTemplate) return;
+  var cell = cellFromEvent(e);
+  if (!cell) return;
+  var entity = findEntityAt(cell.x, cell.y);
+  if (entity) {
+    dragState = { entity: entity, x: cell.x, y: cell.y, moved: false };
+  } else {
+    painting = true;
+    applyToolAt(cell.x, cell.y);
+  }
+});
+
+renderer.domElement.addEventListener('mousemove', function (e) {
+  if (!wallTemplate) return;
+  if (dragState) {
     var cell = cellFromEvent(e);
-    var entity = findEntityAt(cell.x, cell.y);
-    if (entity) {
-      dragState = { entity: entity, x: cell.x, y: cell.y, moved: false };
-    } else {
-      painting = true;
-      paintAt(e);
+    if (cell && (cell.x !== dragState.x || cell.y !== dragState.y)) {
+      dragState.moved = true;
+      dragState.x = cell.x;
+      dragState.y = cell.y;
+      moveEntity(dragState.entity, cell.x, cell.y);
     }
-  });
-
-  canvas.addEventListener('mousemove', function (e) {
-    if (dragState) {
-      var cell = cellFromEvent(e);
-      if (cell.x !== dragState.x || cell.y !== dragState.y) {
-        dragState.moved = true;
-        dragState.x = cell.x;
-        dragState.y = cell.y;
-        moveEntity(dragState.entity, cell.x, cell.y);
-        render();
-      }
-    } else if (painting) {
-      paintAt(e);
-    }
-  });
-
-  window.addEventListener('mouseup', function () {
-    if (dragState && !dragState.moved) {
-      // Plain click on an existing marker (no drag): fall back to the
-      // active tool's click behavior (e.g. toggling it off).
-      window.EditorGrid.applyTool(data, currentTool, dragState.x, dragState.y);
-      render();
-    }
-    dragState = null;
-    painting = false;
-  });
-
-  function render() {
-    canvas.width = data.width * CELL_SIZE;
-    canvas.height = data.height * CELL_SIZE;
-    for (var y = 0; y < data.height; y++) {
-      for (var x = 0; x < data.width; x++) {
-        ctx.fillStyle = data.cells[y][x] === '#' ? '#444455' : '#dddde8';
-        ctx.fillRect(x * CELL_SIZE, y * CELL_SIZE, CELL_SIZE, CELL_SIZE);
-        ctx.strokeStyle = '#00000022';
-        ctx.strokeRect(x * CELL_SIZE, y * CELL_SIZE, CELL_SIZE, CELL_SIZE);
-      }
-    }
-    data.torches.forEach(function (t) {
-      ctx.fillStyle = '#ff8800';
-      ctx.beginPath();
-      ctx.arc(t.x * CELL_SIZE + CELL_SIZE/2, t.y * CELL_SIZE + CELL_SIZE/2, CELL_SIZE*0.25, 0, Math.PI*2);
-      ctx.fill();
-    });
-    data.items.forEach(function (it) {
-      ctx.fillStyle = '#3399ff';
-      ctx.fillRect(it.x*CELL_SIZE+CELL_SIZE*0.3, it.y*CELL_SIZE+CELL_SIZE*0.3, CELL_SIZE*0.4, CELL_SIZE*0.4);
-    });
-    ctx.fillStyle = '#22cc55';
-    ctx.fillRect(data.start.x*CELL_SIZE+4, data.start.y*CELL_SIZE+4, CELL_SIZE-8, CELL_SIZE-8);
-    ctx.fillStyle = '#cc2255';
-    ctx.fillRect(data.exit.x*CELL_SIZE+4, data.exit.y*CELL_SIZE+4, CELL_SIZE-8, CELL_SIZE-8);
+  } else if (painting) {
+    var cell2 = cellFromEvent(e);
+    if (cell2) applyToolAt(cell2.x, cell2.y);
   }
+});
 
-  document.getElementById('resizeBtn').addEventListener('click', function () {
-    var w = parseInt(document.getElementById('widthInput').value, 10);
-    var h = parseInt(document.getElementById('heightInput').value, 10);
-    data = window.EditorGrid.resizeGrid(data, w, h);
-    render();
-  });
+window.addEventListener('mouseup', function (e) {
+  if (e.button !== 0) return;
+  if (dragState && !dragState.moved) {
+    applyToolAt(dragState.x, dragState.y);
+  }
+  dragState = null;
+  painting = false;
+});
 
-  document.getElementById('exportBtn').addEventListener('click', function () {
-    var blob = new Blob([window.LevelIO.exportLevelJSON(data)], { type: 'application/json' });
-    var url = URL.createObjectURL(blob);
-    var a = document.createElement('a');
-    a.href = url;
-    a.download = 'level.json';
-    a.click();
-    URL.revokeObjectURL(url);
-  });
+window.addEventListener('resize', function () {
+  renderer.setSize(viewport.clientWidth, viewport.clientHeight);
+  camera.aspect = viewport.clientWidth / viewport.clientHeight;
+  camera.updateProjectionMatrix();
+});
 
-  document.getElementById('importInput').addEventListener('change', function (e) {
-    var file = e.target.files[0];
-    if (!file) return;
-    var reader = new FileReader();
-    reader.onload = function () {
-      var result = window.LevelIO.parseLevelJSON(reader.result);
-      if (!result.ok) { alert('导入失败：' + result.errors.join(', ')); return; }
-      data = result.data;
-      document.getElementById('widthInput').value = data.width;
-      document.getElementById('heightInput').value = data.height;
-      render();
-    };
-    reader.readAsText(file);
-  });
+document.getElementById('resizeBtn').addEventListener('click', function () {
+  var w = parseInt(document.getElementById('widthInput').value, 10);
+  var h = parseInt(document.getElementById('heightInput').value, 10);
+  data = window.EditorGrid.resizeGrid(data, w, h);
+  rebuildAll();
+});
 
-  render();
+document.getElementById('exportBtn').addEventListener('click', function () {
+  var blob = new Blob([window.LevelIO.exportLevelJSON(data)], { type: 'application/json' });
+  var url = URL.createObjectURL(blob);
+  var a = document.createElement('a');
+  a.href = url;
+  a.download = 'level.json';
+  a.click();
+  URL.revokeObjectURL(url);
+});
+
+document.getElementById('importInput').addEventListener('change', function (e) {
+  var file = e.target.files[0];
+  if (!file) return;
+  var reader = new FileReader();
+  reader.onload = function () {
+    var result = window.LevelIO.parseLevelJSON(reader.result);
+    if (!result.ok) { alert('导入失败：' + result.errors.join(', ')); return; }
+    data = result.data;
+    document.getElementById('widthInput').value = data.width;
+    document.getElementById('heightInput').value = data.height;
+    rebuildAll();
+  };
+  reader.readAsText(file);
+});
+
+function animate() {
+  requestAnimationFrame(animate);
+  controls.update();
+  renderer.render(scene, camera);
+}
 </script>
 </body>
 </html>

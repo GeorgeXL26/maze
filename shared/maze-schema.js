@@ -43,13 +43,23 @@ window.MazeSchema = (function () {
     return row[x] === '.';
   }
 
+  function isWallCell(data, x, y) {
+    if (x < 0 || y < 0 || x >= data.width || y >= data.height) return false;
+    return data.cells[y][x] === '#';
+  }
+
+  // wallTemplate (KayKit wall model) is a flat directional panel (wide along
+  // X, thin along Z); rotate 90 deg so runs of cells stacked along Y (world
+  // Z) connect edge-to-edge instead of reading as a row of disconnected gaps.
+  function computeWallRotationY(data, x, y) {
+    var vertical = (isWallCell(data, x, y - 1) || isWallCell(data, x, y + 1)) &&
+                   !(isWallCell(data, x - 1, y) || isWallCell(data, x + 1, y));
+    return vertical ? Math.PI / 2 : 0;
+  }
+
   function buildMazeMesh(data, THREE, wallTemplate) {
     var group = new THREE.Group();
     var wallGeo = wallTemplate ? null : new THREE.BoxGeometry(1, 1.2, 1);
-    function isWallCell(x, y) {
-      if (x < 0 || y < 0 || x >= data.width || y >= data.height) return false;
-      return data.cells[y][x] === '#';
-    }
     for (var y = 0; y < data.height; y++) {
       for (var x = 0; x < data.width; x++) {
         if (data.cells[y][x] === '#') {
@@ -57,11 +67,7 @@ window.MazeSchema = (function () {
             ? wallTemplate.clone()
             : new THREE.Mesh(wallGeo, new THREE.MeshStandardMaterial({ color: 0x888899 }));
           wall.position.set(x, wallTemplate ? 0 : 0.6, y);
-          // wallTemplate is a flat directional panel (wide along X, thin along Z);
-          // rotate 90 deg so runs of cells stacked along Y (world Z) connect edge-to-edge.
-          var vertical = (isWallCell(x, y - 1) || isWallCell(x, y + 1)) &&
-                         !(isWallCell(x - 1, y) || isWallCell(x + 1, y));
-          wall.rotation.y = vertical ? Math.PI / 2 : 0;
+          wall.rotation.y = computeWallRotationY(data, x, y);
           wall.userData.type = 'wall';
           wall.userData.gridX = x;
           wall.userData.gridY = y;
@@ -82,6 +88,7 @@ window.MazeSchema = (function () {
     parseCells: parseCells,
     validateMazeData: validateMazeData,
     isWalkable: isWalkable,
-    buildMazeMesh: buildMazeMesh
+    buildMazeMesh: buildMazeMesh,
+    computeWallRotationY: computeWallRotationY
   };
 })();
