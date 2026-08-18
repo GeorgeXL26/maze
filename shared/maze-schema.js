@@ -48,26 +48,71 @@ window.MazeSchema = (function () {
     return data.cells[y][x] === '#';
   }
 
-  // wallTemplate (KayKit wall model) is a flat directional panel (wide along
-  // X, thin along Z); rotate 90 deg so runs of cells stacked along Y (world
-  // Z) connect edge-to-edge instead of reading as a row of disconnected gaps.
+  // Bitmask of which cardinal neighbors are also wall cells (N=1, E=2, S=4, W=8).
+  function wallNeighborMask(data, x, y) {
+    var mask = 0;
+    if (isWallCell(data, x, y - 1)) mask |= 1; // N
+    if (isWallCell(data, x + 1, y)) mask |= 2; // E
+    if (isWallCell(data, x, y + 1)) mask |= 4; // S
+    if (isWallCell(data, x - 1, y)) mask |= 8; // W
+    return mask;
+  }
+
+  // Auto-tiling: the KayKit wall models are directional pieces (straight
+  // panel, L corner, T split, 4-way crossing), each with a fixed default
+  // orientation. WALL_PIECE_TABLE maps every possible 4-neighbor bitmask to
+  // {piece, rotationY}, derived from each model's default connection
+  // direction(s) rotated in 90-degree steps. straight/corner/tsplit each
+  // cover multiple masks (their possible rotations); crossing only needs
+  // one entry since it is rotationally symmetric. 0- and 1-neighbor cells
+  // (isolated pillar / dead end) fall back to a straight piece oriented
+  // along whichever axis the single connection (if any) sits on.
+  var WALL_PIECE_TABLE = {
+    0: { piece: 'straight', rotationY: 0 },
+    1: { piece: 'straight', rotationY: Math.PI / 2 },  // N only
+    2: { piece: 'straight', rotationY: 0 },             // E only
+    3: { piece: 'corner', rotationY: Math.PI },         // N+E
+    4: { piece: 'straight', rotationY: Math.PI / 2 },   // S only
+    5: { piece: 'straight', rotationY: Math.PI / 2 },   // N+S
+    6: { piece: 'corner', rotationY: Math.PI / 2 },      // S+E
+    7: { piece: 'tsplit', rotationY: Math.PI / 2 },      // N+E+S (missing W)
+    8: { piece: 'straight', rotationY: 0 },              // W only
+    9: { piece: 'corner', rotationY: 3 * Math.PI / 2 },  // N+W
+    10: { piece: 'straight', rotationY: 0 },             // E+W
+    11: { piece: 'tsplit', rotationY: Math.PI },          // N+E+W (missing S)
+    12: { piece: 'corner', rotationY: 0 },                // S+W
+    13: { piece: 'tsplit', rotationY: 3 * Math.PI / 2 },  // N+S+W (missing E)
+    14: { piece: 'tsplit', rotationY: 0 },                // E+S+W (missing N)
+    15: { piece: 'crossing', rotationY: 0 }               // all four
+  };
+
+  function computeWallPiece(data, x, y) {
+    return WALL_PIECE_TABLE[wallNeighborMask(data, x, y)];
+  }
+
+  // Backward-compatible helper: rotation only, for callers that only need
+  // to orient a plain straight panel (e.g. a procedural fallback box).
   function computeWallRotationY(data, x, y) {
     var vertical = (isWallCell(data, x, y - 1) || isWallCell(data, x, y + 1)) &&
                    !(isWallCell(data, x - 1, y) || isWallCell(data, x + 1, y));
     return vertical ? Math.PI / 2 : 0;
   }
 
-  function buildMazeMesh(data, THREE, wallTemplate) {
+  // wallTemplates, when provided, is a map of piece name -> THREE.Object3D
+  // template: { straight, corner, tsplit, crossing }. When omitted, walls
+  // fall back to a plain procedural box (used by tests and as a last resort).
+  function buildMazeMesh(data, THREE, wallTemplates) {
     var group = new THREE.Group();
-    var wallGeo = wallTemplate ? null : new THREE.BoxGeometry(1, 1.2, 1);
+    var wallGeo = wallTemplates ? null : new THREE.BoxGeometry(1, 1.2, 1);
     for (var y = 0; y < data.height; y++) {
       for (var x = 0; x < data.width; x++) {
         if (data.cells[y][x] === '#') {
-          var wall = wallTemplate
-            ? wallTemplate.clone()
+          var pieceInfo = computeWallPiece(data, x, y);
+          var wall = wallTemplates
+            ? wallTemplates[pieceInfo.piece].clone()
             : new THREE.Mesh(wallGeo, new THREE.MeshStandardMaterial({ color: 0x888899 }));
-          wall.position.set(x, wallTemplate ? 0 : 0.6, y);
-          wall.rotation.y = computeWallRotationY(data, x, y);
+          wall.position.set(x, wallTemplates ? 0 : 0.6, y);
+          wall.rotation.y = pieceInfo.rotationY;
           wall.userData.type = 'wall';
           wall.userData.gridX = x;
           wall.userData.gridY = y;
@@ -89,6 +134,8 @@ window.MazeSchema = (function () {
     validateMazeData: validateMazeData,
     isWalkable: isWalkable,
     buildMazeMesh: buildMazeMesh,
-    computeWallRotationY: computeWallRotationY
+    computeWallRotationY: computeWallRotationY,
+    wallNeighborMask: wallNeighborMask,
+    computeWallPiece: computeWallPiece
   };
 })();
