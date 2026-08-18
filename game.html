@@ -49,6 +49,22 @@ async function main() {
   var ambient = new THREE.AmbientLight(0x445566, 1.5);
   scene.add(ambient);
 
+  var TORCH_LIGHT_RADIUS = 1.2;
+  var torchObjects = mazeData.torches.map(function (t) {
+    var flameGeo = new THREE.SphereGeometry(0.15, 8, 8);
+    var flameMat = new THREE.MeshBasicMaterial({ color: 0x552200 });
+    var flame = new THREE.Mesh(flameGeo, flameMat);
+    flame.position.set(t.x, 1.0, t.y);
+    scene.add(flame);
+
+    var light = new THREE.PointLight(0xffaa44, 0, 4);
+    light.position.set(t.x, 1.0, t.y);
+    scene.add(light);
+
+    return { data: t, flame: flame, light: light, lit: false };
+  });
+  var lastLitTorchIndex = -1;
+
   var playerPos = { x: mazeData.start.x, z: mazeData.start.y };
   window.ToonRenderer.updateFollowCamera(camera, { x: playerPos.x, y: 0, z: playerPos.z });
 
@@ -89,6 +105,18 @@ async function main() {
     playerMesh.position.set(playerPos.x, 0.3, playerPos.z);
     playerOutline.position.copy(playerMesh.position);
     window.ToonRenderer.updateFollowCamera(camera, { x: playerPos.x, y: 0, z: playerPos.z });
+
+    var nearbyIdx = window.PlayerController.findNearbyTorch(
+      { x: playerPos.x, z: playerPos.z },
+      mazeData.torches,
+      TORCH_LIGHT_RADIUS
+    );
+    if (nearbyIdx !== -1 && !torchObjects[nearbyIdx].lit) {
+      torchObjects[nearbyIdx].lit = true;
+      torchObjects[nearbyIdx].light.intensity = 15;
+      torchObjects[nearbyIdx].flame.material.color.set(0xffaa33);
+      lastLitTorchIndex = nearbyIdx;
+    }
 
     renderer.render(scene, camera);
   }
