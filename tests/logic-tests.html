@@ -7,6 +7,7 @@
 <script src="../shared/toon-renderer.js"></script>
 <script src="../shared/player-controller.js"></script>
 <script src="../shared/level-io.js"></script>
+<script src="../shared/editor-grid.js"></script>
 <script>
   var results = [];
   function assertEqual(actual, expected, label) {
@@ -113,6 +114,26 @@
 
   var invalidLevel = window.LevelIO.parseLevelJSON(JSON.stringify({width:1}));
   assertTrue(!invalidLevel.ok, 'parseLevelJSON rejects JSON missing required fields');
+
+  assertEqual(window.EditorGrid.pixelToCell(105, 40, 32), {x:3,y:1}, 'pixelToCell floors pixel coords by cell size');
+
+  var edLevel = window.LevelIO.createDefaultLevel(4, 4);
+  window.EditorGrid.applyTool(edLevel, window.EditorGrid.TOOLS.WALL, 1, 1);
+  assertEqual(edLevel.cells[1], '##.#', 'applyTool WALL writes # into cells');
+  window.EditorGrid.applyTool(edLevel, window.EditorGrid.TOOLS.FLOOR, 1, 1);
+  assertEqual(edLevel.cells[1], '#..#', 'applyTool FLOOR writes . into cells');
+
+  window.EditorGrid.applyTool(edLevel, window.EditorGrid.TOOLS.TORCH, 2, 2);
+  assertEqual(edLevel.torches.length, 1, 'applyTool TORCH adds a torch');
+  window.EditorGrid.applyTool(edLevel, window.EditorGrid.TOOLS.TORCH, 2, 2);
+  assertEqual(edLevel.torches.length, 0, 'applyTool TORCH toggles off when applied again at same cell');
+
+  window.EditorGrid.applyTool(edLevel, window.EditorGrid.TOOLS.START, 2, 2);
+  assertEqual(edLevel.start, {x:2,y:2}, 'applyTool START overwrites start position');
+
+  var resized = window.EditorGrid.resizeGrid(edLevel, 3, 3);
+  assertEqual(resized.cells.length, 3, 'resizeGrid produces newHeight rows');
+  assertEqual(resized.cells[0].length, 3, 'resizeGrid produces newWidth columns');
 
   document.getElementById('out').textContent = results.join('\n');
   results.forEach(function (r) { console.log(r); });
