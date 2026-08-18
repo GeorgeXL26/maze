@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<title>Torch Maze — 地图编辑器</title>
+<style>
+  body { font-family: sans-serif; margin: 0; display: flex; }
+  #toolbar { padding: 12px; display: flex; flex-direction: column; gap: 6px; width: 160px; }
+  #toolbar button { padding: 8px; cursor: pointer; }
+  #toolbar button.active { background: #ffd966; font-weight: bold; }
+  canvas { border: 1px solid #333; image-rendering: pixelated; }
+</style>
+</head>
+<body>
+<div id="toolbar">
+  <div>工具</div>
+  <button data-tool="wall" class="active">墙 (Wall)</button>
+  <button data-tool="floor">地板 (Floor)</button>
+  <button data-tool="torch">火把 (Torch)</button>
+  <button data-tool="item">道具 (Item)</button>
+  <button data-tool="start">起点 (Start)</button>
+  <button data-tool="exit">终点 (Exit)</button>
+</div>
+<canvas id="grid" width="480" height="480"></canvas>
+<script src="shared/maze-schema.js"></script>
+<script src="shared/level-io.js"></script>
+<script src="shared/editor-grid.js"></script>
+<script>
+  var CELL_SIZE = 32;
+  var data = window.LevelIO.createDefaultLevel(15, 15);
+  var currentTool = window.EditorGrid.TOOLS.WALL;
+  var canvas = document.getElementById('grid');
+  var ctx = canvas.getContext('2d');
+
+  document.querySelectorAll('#toolbar button').forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      document.querySelectorAll('#toolbar button').forEach(function (b) { b.classList.remove('active'); });
+      btn.classList.add('active');
+      currentTool = btn.dataset.tool;
+    });
+  });
+
+  function paintAt(evt) {
+    var rect = canvas.getBoundingClientRect();
+    var cell = window.EditorGrid.pixelToCell(evt.clientX - rect.left, evt.clientY - rect.top, CELL_SIZE);
+    window.EditorGrid.applyTool(data, currentTool, cell.x, cell.y);
+    render();
+  }
+
+  var painting = false;
+  canvas.addEventListener('mousedown', function (e) { painting = true; paintAt(e); });
+  window.addEventListener('mouseup', function () { painting = false; });
+  canvas.addEventListener('mousemove', function (e) { if (painting) paintAt(e); });
+
+  function render() {
+    canvas.width = data.width * CELL_SIZE;
+    canvas.height = data.height * CELL_SIZE;
+    for (var y = 0; y < data.height; y++) {
+      for (var x = 0; x < data.width; x++) {
+        ctx.fillStyle = data.cells[y][x] === '#' ? '#444455' : '#dddde8';
+        ctx.fillRect(x * CELL_SIZE, y * CELL_SIZE, CELL_SIZE, CELL_SIZE);
+        ctx.strokeStyle = '#00000022';
+        ctx.strokeRect(x * CELL_SIZE, y * CELL_SIZE, CELL_SIZE, CELL_SIZE);
+      }
+    }
+    data.torches.forEach(function (t) {
+      ctx.fillStyle = '#ff8800';
+      ctx.beginPath();
+      ctx.arc(t.x * CELL_SIZE + CELL_SIZE/2, t.y * CELL_SIZE + CELL_SIZE/2, CELL_SIZE*0.25, 0, Math.PI*2);
+      ctx.fill();
+    });
+    data.items.forEach(function (it) {
+      ctx.fillStyle = '#3399ff';
+      ctx.fillRect(it.x*CELL_SIZE+CELL_SIZE*0.3, it.y*CELL_SIZE+CELL_SIZE*0.3, CELL_SIZE*0.4, CELL_SIZE*0.4);
+    });
+    ctx.fillStyle = '#22cc55';
+    ctx.fillRect(data.start.x*CELL_SIZE+4, data.start.y*CELL_SIZE+4, CELL_SIZE-8, CELL_SIZE-8);
+    ctx.fillStyle = '#cc2255';
+    ctx.fillRect(data.exit.x*CELL_SIZE+4, data.exit.y*CELL_SIZE+4, CELL_SIZE-8, CELL_SIZE-8);
+  }
+
+  render();
+</script>
+</body>
+</html>
