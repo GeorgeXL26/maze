@@ -90,6 +90,16 @@
   var freeMove = window.PlayerController.resolveCollision({x:1,z:0}, {x:1.5,z:0}, 0.3, openMaze);
   assertEqual(freeMove, {x:1.5,z:0}, 'resolveCollision allows movement through open floor');
 
+  var torches = [{x:2,y:2}, {x:5,y:5}];
+  assertEqual(window.PlayerController.findNearbyTorch({x:2.1,z:2.1}, torches, 0.5), 0, 'findNearbyTorch finds close torch by index');
+  assertEqual(window.PlayerController.findNearbyTorch({x:0,z:0}, torches, 0.5), -1, 'findNearbyTorch returns -1 when none in range');
+
+  var items = [{x:1,y:1,id:'gem1'}];
+  assertEqual(window.PlayerController.findNearbyItem({x:1,z:1}, items, 0.4), 0, 'findNearbyItem finds item at same cell');
+
+  assertTrue(!window.PlayerController.checkWin({x:7,z:7}, {x:7,y:7}, 1, 2, 0.5), 'checkWin false when items not all collected');
+  assertTrue(window.PlayerController.checkWin({x:7,z:7}, {x:7,y:7}, 2, 2, 0.5), 'checkWin true at exit with all items collected');
+
   document.getElementById('out').textContent = results.join('\n');
   results.forEach(function (r) { console.log(r); });
 </script>

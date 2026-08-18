@@ -30,5 +30,34 @@ window.PlayerController = (function () {
     return { x: x, z: z };
   }
 
-  return { computeMove: computeMove, resolveCollision: resolveCollision };
+  function dist2D(pos, cell) {
+    var dx = pos.x - cell.x, dz = pos.z - cell.y;
+    return Math.sqrt(dx * dx + dz * dz);
+  }
+
+  function findNearbyTorch(pos, torches, radius) {
+    for (var i = 0; i < torches.length; i++) {
+      if (dist2D(pos, torches[i]) <= radius) return i;
+    }
+    return -1;
+  }
+
+  function findNearbyItem(pos, items, radius) {
+    for (var i = 0; i < items.length; i++) {
+      if (dist2D(pos, items[i]) <= radius) return i;
+    }
+    return -1;
+  }
+
+  function checkWin(pos, exit, collectedCount, totalItems, radius) {
+    return collectedCount >= totalItems && dist2D(pos, exit) <= radius;
+  }
+
+  return {
+    computeMove: computeMove,
+    resolveCollision: resolveCollision,
+    findNearbyTorch: findNearbyTorch,
+    findNearbyItem: findNearbyItem,
+    checkWin: checkWin
+  };
 })();
