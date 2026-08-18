@@ -6,12 +6,24 @@
 <style>
   html, body { margin: 0; height: 100%; overflow: hidden; background: #1a1a20; }
   body { display: flex; font-family: sans-serif; }
-  #toolbar { padding: 12px; display: flex; flex-direction: column; gap: 6px; width: 170px; flex-shrink: 0; background: #f0f0f0; overflow-y: auto; }
-  #toolbar button { padding: 8px; cursor: pointer; }
-  #toolbar button.active { background: #ffd966; font-weight: bold; }
+  #toolbar { padding: 12px; display: flex; flex-direction: column; gap: 10px; width: 190px; flex-shrink: 0; background: #f0f0f0; overflow-y: auto; }
+  .section-title { font-size: 12px; font-weight: bold; color: #888; text-transform: uppercase; letter-spacing: 0.05em; }
+  #palette { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  .palette-item {
+    display: flex; flex-direction: column; align-items: center; gap: 4px;
+    padding: 10px 4px; border-radius: 8px; border: 2px solid transparent;
+    background: #fff; cursor: grab; user-select: none;
+    box-shadow: 0 1px 2px rgba(0,0,0,0.12);
+  }
+  .palette-item:hover { background: #f7f0da; }
+  .palette-item.active { border-color: #f2a900; background: #ffedb3; }
+  .palette-item .icon { font-size: 26px; line-height: 1; }
+  .palette-item .label { font-size: 11px; color: #444; }
+  .palette-item:active { cursor: grabbing; }
+  #toolbar button.action { padding: 8px; cursor: pointer; }
   #viewport { position: relative; flex: 1; }
   canvas { display: block; cursor: crosshair; }
-  #hint { position: fixed; bottom: 8px; left: 178px; color: #ccc; font-size: 12px; font-family: sans-serif; }
+  canvas.pan-mode { cursor: grab; }
 </style>
 <script type="importmap">
 {
@@ -24,27 +36,31 @@
 </head>
 <body>
 <div id="toolbar">
-  <div>工具</div>
-  <button data-tool="wall" class="active">墙 (Wall)</button>
-  <button data-tool="floor">地板 (Floor)</button>
-  <button data-tool="torch">火把 (Torch)</button>
-  <button data-tool="item">道具 (Item)</button>
-  <button data-tool="start">起点 (Start)</button>
-  <button data-tool="exit">终点 (Exit)</button>
+  <div class="section-title">工具面板</div>
+  <div id="palette">
+    <div class="palette-item active" data-tool="wall" draggable="true"><span class="icon">🧱</span><span class="label">墙</span></div>
+    <div class="palette-item" data-tool="floor" draggable="true"><span class="icon">⬜</span><span class="label">地板</span></div>
+    <div class="palette-item" data-tool="torch" draggable="true"><span class="icon">🔥</span><span class="label">火把</span></div>
+    <div class="palette-item" data-tool="item" draggable="true"><span class="icon">🪙</span><span class="label">道具</span></div>
+    <div class="palette-item" data-tool="start" draggable="true"><span class="icon">🟢</span><span class="label">起点</span></div>
+    <div class="palette-item" data-tool="exit" draggable="true"><span class="icon">🔴</span><span class="label">终点</span></div>
+    <div class="palette-item" data-tool="pan"><span class="icon">✋</span><span class="label">移动视角</span></div>
+  </div>
   <hr>
-  <div>网格尺寸（最大 200x200）</div>
+  <div class="section-title">网格尺寸（最大 200x200）</div>
   <div style="display:flex; gap:4px;">
     <input id="widthInput" type="number" value="15" min="3" max="200" style="width:50px;">
     <input id="heightInput" type="number" value="15" min="3" max="200" style="width:50px;">
-    <button id="resizeBtn">调整</button>
+    <button class="action" id="resizeBtn">调整</button>
   </div>
   <hr>
-  <button id="exportBtn">导出 JSON</button>
+  <button class="action" id="exportBtn">导出 JSON</button>
   <input id="importInput" type="file" accept="application/json">
   <hr>
   <div style="font-size:12px; color:#555;">
-    左键：绘制 / 拖动已放置的火把·道具·起点·终点<br>
-    右键拖动：平移视角　滚轮：缩放
+    从上方拖动图标到地图上放置；也可先点选工具再左键点击/拖动绘制。<br>
+    拖动已放置的火把·道具·起点·终点可移动它们。<br>
+    选中"移动视角"或按右键拖动可平移；滚轮缩放。
   </div>
 </div>
 <div id="viewport"></div>
@@ -61,14 +77,6 @@ var WALL_SCALE = 0.25;
 var data = window.LevelIO.createDefaultLevel(15, 15);
 var currentTool = window.EditorGrid.TOOLS.WALL;
 
-document.querySelectorAll('#toolbar button[data-tool]').forEach(function (btn) {
-  btn.addEventListener('click', function () {
-    document.querySelectorAll('#toolbar button[data-tool]').forEach(function (b) { b.classList.remove('active'); });
-    btn.classList.add('active');
-    currentTool = btn.dataset.tool;
-  });
-});
-
 var viewport = document.getElementById('viewport');
 var renderer = new THREE.WebGLRenderer({ antialias: true });
 renderer.setSize(viewport.clientWidth, viewport.clientHeight);
@@ -83,6 +91,26 @@ var controls = new OrbitControls(camera, renderer.domElement);
 controls.mouseButtons = { LEFT: null, MIDDLE: THREE.MOUSE.DOLLY, RIGHT: THREE.MOUSE.PAN };
 controls.enableRotate = false;
 controls.screenSpacePanning = true;
+
+function selectTool(tool) {
+  currentTool = tool;
+  document.querySelectorAll('.palette-item').forEach(function (el) {
+    el.classList.toggle('active', el.dataset.tool === tool);
+  });
+  var isPan = tool === 'pan';
+  controls.mouseButtons.LEFT = isPan ? THREE.MOUSE.PAN : null;
+  renderer.domElement.classList.toggle('pan-mode', isPan);
+}
+
+document.querySelectorAll('.palette-item').forEach(function (el) {
+  el.addEventListener('click', function () { selectTool(el.dataset.tool); });
+  if (el.dataset.tool !== 'pan') {
+    el.addEventListener('dragstart', function (e) {
+      e.dataTransfer.setData('text/plain', el.dataset.tool);
+      e.dataTransfer.effectAllowed = 'copy';
+    });
+  }
+});
 
 function frameCamera() {
   var cx = (data.width - 1) / 2, cz = (data.height - 1) / 2;
@@ -260,9 +288,10 @@ function moveEntity(entity, x, y) {
   }
 }
 
-function applyToolAt(x, y) {
-  window.EditorGrid.applyTool(data, currentTool, x, y);
-  if (currentTool === window.EditorGrid.TOOLS.WALL || currentTool === window.EditorGrid.TOOLS.FLOOR) {
+function applyToolAt(x, y, tool) {
+  tool = tool || currentTool;
+  window.EditorGrid.applyTool(data, tool, x, y);
+  if (tool === window.EditorGrid.TOOLS.WALL || tool === window.EditorGrid.TOOLS.FLOOR) {
     refreshWallArea(x, y);
   } else {
     rebuildMarkers();
@@ -275,7 +304,7 @@ var dragState = null;
 renderer.domElement.addEventListener('contextmenu', function (e) { e.preventDefault(); });
 
 renderer.domElement.addEventListener('mousedown', function (e) {
-  if (e.button !== 0 || !wallTemplate) return;
+  if (e.button !== 0 || !wallTemplate || currentTool === 'pan') return;
   var cell = cellFromEvent(e);
   if (!cell) return;
   var entity = findEntityAt(cell.x, cell.y);
@@ -316,6 +345,21 @@ window.addEventListener('resize', function () {
   renderer.setSize(viewport.clientWidth, viewport.clientHeight);
   camera.aspect = viewport.clientWidth / viewport.clientHeight;
   camera.updateProjectionMatrix();
+});
+
+renderer.domElement.addEventListener('dragover', function (e) {
+  e.preventDefault();
+  e.dataTransfer.dropEffect = 'copy';
+});
+
+renderer.domElement.addEventListener('drop', function (e) {
+  e.preventDefault();
+  if (!wallTemplate) return;
+  var tool = e.dataTransfer.getData('text/plain');
+  if (!tool) return;
+  var cell = cellFromEvent(e);
+  if (!cell) return;
+  applyToolAt(cell.x, cell.y, tool);
 });
 
 document.getElementById('resizeBtn').addEventListener('click', function () {
