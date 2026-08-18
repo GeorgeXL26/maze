@@ -40,13 +40,14 @@ async function main() {
 
   var scene = new THREE.Scene();
   scene.background = new THREE.Color(0x05050a);
+  scene.fog = new THREE.FogExp2(0x05050a, 0.03);
 
   var camera = window.ToonRenderer.createFollowCamera(THREE, window.innerWidth / window.innerHeight);
 
   var mazeMesh = window.MazeSchema.buildMazeMesh(mazeData, THREE);
   scene.add(mazeMesh);
 
-  var ambient = new THREE.AmbientLight(0x445566, 1.5);
+  var ambient = new THREE.AmbientLight(0x445566, 0.5);
   scene.add(ambient);
 
   var TORCH_LIGHT_RADIUS = 1.2;
@@ -75,6 +76,9 @@ async function main() {
   scene.add(playerMesh);
   var playerOutline = window.ToonRenderer.createOutlineMesh(playerMesh, THREE, 0.08);
   scene.add(playerOutline);
+
+  var playerLight = new THREE.PointLight(0xffddaa, 10, 3.5);
+  scene.add(playerLight);
 
   var input = { forward: false, back: false, left: false, right: false };
   var keyMap = { KeyW: 'forward', KeyS: 'back', KeyA: 'left', KeyD: 'right' };
@@ -105,6 +109,7 @@ async function main() {
     playerMesh.position.set(playerPos.x, 0.3, playerPos.z);
     playerOutline.position.copy(playerMesh.position);
     window.ToonRenderer.updateFollowCamera(camera, { x: playerPos.x, y: 0, z: playerPos.z });
+    playerLight.position.set(playerPos.x, 0.6, playerPos.z);
 
     var nearbyIdx = window.PlayerController.findNearbyTorch(
       { x: playerPos.x, z: playerPos.z },
