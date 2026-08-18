@@ -20,6 +20,16 @@
   <button data-tool="item">道具 (Item)</button>
   <button data-tool="start">起点 (Start)</button>
   <button data-tool="exit">终点 (Exit)</button>
+  <hr>
+  <div>网格尺寸</div>
+  <div style="display:flex; gap:4px;">
+    <input id="widthInput" type="number" value="15" min="3" max="60" style="width:50px;">
+    <input id="heightInput" type="number" value="15" min="3" max="60" style="width:50px;">
+    <button id="resizeBtn">调整</button>
+  </div>
+  <hr>
+  <button id="exportBtn">导出 JSON</button>
+  <input id="importInput" type="file" accept="application/json">
 </div>
 <canvas id="grid" width="480" height="480"></canvas>
 <script src="shared/maze-schema.js"></script>
@@ -78,6 +88,38 @@
     ctx.fillStyle = '#cc2255';
     ctx.fillRect(data.exit.x*CELL_SIZE+4, data.exit.y*CELL_SIZE+4, CELL_SIZE-8, CELL_SIZE-8);
   }
+
+  document.getElementById('resizeBtn').addEventListener('click', function () {
+    var w = parseInt(document.getElementById('widthInput').value, 10);
+    var h = parseInt(document.getElementById('heightInput').value, 10);
+    data = window.EditorGrid.resizeGrid(data, w, h);
+    render();
+  });
+
+  document.getElementById('exportBtn').addEventListener('click', function () {
+    var blob = new Blob([window.LevelIO.exportLevelJSON(data)], { type: 'application/json' });
+    var url = URL.createObjectURL(blob);
+    var a = document.createElement('a');
+    a.href = url;
+    a.download = 'level.json';
+    a.click();
+    URL.revokeObjectURL(url);
+  });
+
+  document.getElementById('importInput').addEventListener('change', function (e) {
+    var file = e.target.files[0];
+    if (!file) return;
+    var reader = new FileReader();
+    reader.onload = function () {
+      var result = window.LevelIO.parseLevelJSON(reader.result);
+      if (!result.ok) { alert('导入失败：' + result.errors.join(', ')); return; }
+      data = result.data;
+      document.getElementById('widthInput').value = data.width;
+      document.getElementById('heightInput').value = data.height;
+      render();
+    };
+    reader.readAsText(file);
+  });
 
   render();
 </script>

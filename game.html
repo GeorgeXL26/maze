@@ -17,10 +17,15 @@
 </script>
 </head>
 <body>
+<div id="loader" style="position:fixed; top:10px; right:10px; color:#fff; font-family:sans-serif;">
+  <input id="customLevelInput" type="file" accept="application/json">
+  <div style="font-size:12px;">选择自定义关卡 JSON（不选则加载默认关卡）</div>
+</div>
 <div id="hud">Loading...</div>
 <script src="shared/maze-schema.js"></script>
 <script src="shared/toon-renderer.js"></script>
 <script src="shared/player-controller.js"></script>
+<script src="shared/level-io.js"></script>
 <script type="module">
 import * as THREE from 'three';
 
@@ -29,8 +34,19 @@ async function loadDefaultLevel() {
   return res.json();
 }
 
-async function main() {
-  var mazeData = await loadDefaultLevel();
+function loadCustomLevel(file) {
+  return new Promise(function (resolve, reject) {
+    var reader = new FileReader();
+    reader.onload = function () {
+      var result = window.LevelIO.parseLevelJSON(reader.result);
+      if (!result.ok) reject(new Error(result.errors.join(', ')));
+      else resolve(result.data);
+    };
+    reader.readAsText(file);
+  });
+}
+
+async function startGame(mazeData) {
   var check = window.MazeSchema.validateMazeData(mazeData);
   if (!check.valid) { console.error('Invalid level:', check.errors); return; }
 
@@ -171,7 +187,15 @@ async function main() {
   animate();
 }
 
-main();
+document.getElementById('customLevelInput').addEventListener('change', function (e) {
+  var file = e.target.files[0];
+  if (!file) return;
+  loadCustomLevel(file).then(startGame).catch(function (err) {
+    alert('关卡加载失败：' + err.message);
+  });
+});
+
+loadDefaultLevel().then(startGame);
 </script>
 </body>
 </html>
