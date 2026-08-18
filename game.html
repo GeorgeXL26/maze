@@ -52,6 +52,23 @@ async function main() {
   var playerPos = { x: mazeData.start.x, z: mazeData.start.y };
   window.ToonRenderer.updateFollowCamera(camera, { x: playerPos.x, y: 0, z: playerPos.z });
 
+  var playerGeo = new THREE.SphereGeometry(0.3, 16, 16);
+  var playerMat = window.ToonRenderer.createToonMaterial(0xffcc66, THREE);
+  var playerMesh = new THREE.Mesh(playerGeo, playerMat);
+  playerMesh.position.set(playerPos.x, 0.3, playerPos.z);
+  scene.add(playerMesh);
+  var playerOutline = window.ToonRenderer.createOutlineMesh(playerMesh, THREE, 0.08);
+  scene.add(playerOutline);
+
+  var input = { forward: false, back: false, left: false, right: false };
+  var keyMap = { KeyW: 'forward', KeyS: 'back', KeyA: 'left', KeyD: 'right' };
+  window.addEventListener('keydown', function (e) { if (keyMap[e.code]) input[keyMap[e.code]] = true; });
+  window.addEventListener('keyup', function (e) { if (keyMap[e.code]) input[keyMap[e.code]] = false; });
+
+  var clock = new THREE.Clock();
+  var PLAYER_SPEED = 2.5;
+  var PLAYER_RADIUS = 0.3;
+
   window.addEventListener('resize', function () {
     renderer.setSize(window.innerWidth, window.innerHeight);
     camera.aspect = window.innerWidth / window.innerHeight;
@@ -62,6 +79,17 @@ async function main() {
 
   function animate() {
     requestAnimationFrame(animate);
+    var dt = clock.getDelta();
+
+    var intended = window.PlayerController.computeMove({ x: playerPos.x, z: playerPos.z }, input, dt, PLAYER_SPEED);
+    var resolved = window.PlayerController.resolveCollision({ x: playerPos.x, z: playerPos.z }, intended, PLAYER_RADIUS, mazeData);
+    playerPos.x = resolved.x;
+    playerPos.z = resolved.z;
+
+    playerMesh.position.set(playerPos.x, 0.3, playerPos.z);
+    playerOutline.position.copy(playerMesh.position);
+    window.ToonRenderer.updateFollowCamera(camera, { x: playerPos.x, y: 0, z: playerPos.z });
+
     renderer.render(scene, camera);
   }
   animate();
