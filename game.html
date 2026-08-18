@@ -66,6 +66,17 @@ async function main() {
   });
   var lastLitTorchIndex = -1;
 
+  var ITEM_PICKUP_RADIUS = 0.5;
+  var itemGeo = new THREE.OctahedronGeometry(0.2);
+  var itemMeshes = mazeData.items.map(function (it) {
+    var mesh = new THREE.Mesh(itemGeo, window.ToonRenderer.createToonMaterial(0x66ccff, THREE));
+    mesh.position.set(it.x, 0.5, it.y);
+    scene.add(mesh);
+    return { data: it, mesh: mesh, collected: false };
+  });
+  var collectedCount = 0;
+  var gameWon = false;
+
   var playerPos = { x: mazeData.start.x, z: mazeData.start.y };
   window.ToonRenderer.updateFollowCamera(camera, { x: playerPos.x, y: 0, z: playerPos.z });
 
@@ -130,6 +141,30 @@ async function main() {
       torchObjects[nearbyIdx].flame.material.color.set(0xffaa33);
       lastLitTorchIndex = nearbyIdx;
     }
+
+    if (!gameWon) {
+      var itemIdx = window.PlayerController.findNearbyItem(
+        { x: playerPos.x, z: playerPos.z },
+        mazeData.items,
+        ITEM_PICKUP_RADIUS
+      );
+      if (itemIdx !== -1 && !itemMeshes[itemIdx].collected) {
+        itemMeshes[itemIdx].collected = true;
+        scene.remove(itemMeshes[itemIdx].mesh);
+        collectedCount++;
+      }
+
+      if (window.PlayerController.checkWin(
+        { x: playerPos.x, z: playerPos.z }, mazeData.exit,
+        collectedCount, mazeData.items.length, 0.6
+      )) {
+        gameWon = true;
+      }
+    }
+
+    document.getElementById('hud').textContent =
+      gameWon ? '通关！收集 ' + collectedCount + '/' + mazeData.items.length
+              : '道具 ' + collectedCount + '/' + mazeData.items.length + ' — WASD 移动，E 传送回火把';
 
     renderer.render(scene, camera);
   }
