@@ -42,6 +42,13 @@
     position: fixed; inset: 0; background: rgba(0,0,0,0.72);
     display: flex; align-items: center; justify-content: center; z-index: 10;
   }
+  /* #viewerModal.hidden must win over the plain #viewerModal rule above —
+     an id+class selector outranks a lone id selector, so this correctly
+     overrides "display: flex" regardless of source order. Without this,
+     the modal rendered as a full-screen overlay from page load (class
+     "hidden" alone loses to the more specific #viewerModal rule), silently
+     blocking every click on the whole page. */
+  #viewerModal.hidden { display: none; }
   #viewerPanel { background: #212127; border: 1px solid #3a3a42; border-radius: 8px; padding: 14px; }
   #viewerCanvasWrap { width: 480px; height: 480px; background: #14141a; border-radius: 6px; overflow: hidden; }
   #viewerCanvasWrap canvas { display: block; cursor: grab; }
