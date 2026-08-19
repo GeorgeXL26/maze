@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Torch Maze — Choose a Level</title>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,440;9..144,560;9..144,680&family=Manrope:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --void: #0b0a08; --parchment: #ece1c8; --parchment-dim: #b8ac93;
+    --torch: #ffab52; --torch-hot: #ffd08a; --moss: #7c8f6a;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; min-height: 100%; background: var(--void); }
+  body { font-family: 'Manrope', sans-serif; color: var(--parchment); padding: 6vh 6vw; }
+  a { color: inherit; }
+  header { display: flex; align-items: baseline; justify-content: space-between; flex-wrap: wrap; gap: 12px; margin-bottom: 2.4rem; }
+  h1 { font-family: 'Fraunces', serif; font-weight: 560; font-size: clamp(1.8rem, 4vw, 2.6rem); margin: 0; }
+  h1 .accent { color: var(--torch-hot); }
+  .back-link { font-size: 0.85rem; color: var(--parchment-dim); text-decoration: none; border-bottom: 1px solid transparent; }
+  .back-link:hover { border-color: var(--parchment-dim); }
+
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 14px; margin-bottom: 3rem; }
+  .level-card {
+    display: block; text-decoration: none; color: var(--parchment);
+    border: 1px solid rgba(236, 225, 200, 0.16); border-radius: 10px;
+    padding: 1.2rem 1.3rem; background: linear-gradient(180deg, rgba(30, 26, 20, 0.72), rgba(14, 12, 9, 0.82));
+    transition: border-color 0.2s ease, transform 0.2s ease;
+  }
+  .level-card:hover, .level-card:focus-visible { border-color: var(--torch); transform: translateY(-2px); }
+  .level-card .icon { font-size: 1.6rem; }
+  .level-card .name { font-family: 'Fraunces', serif; font-weight: 560; font-size: 1.05rem; margin-top: 0.5rem; }
+
+  .section-title { font-family: 'Manrope', sans-serif; font-weight: 700; font-size: 0.78rem; letter-spacing: 0.16em; text-transform: uppercase; color: var(--torch); margin: 0 0 1rem; }
+  .custom-panel {
+    border: 1px dashed rgba(236, 225, 200, 0.3); border-radius: 10px; padding: 1.4rem;
+    max-width: 32rem; font-size: 0.88rem; color: var(--parchment-dim);
+  }
+  .custom-panel input[type="file"] { display: block; margin-top: 0.8rem; color: var(--parchment-dim); }
+  .custom-error { color: #e08a6e; margin-top: 0.6rem; font-size: 0.85rem; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Choose a <span class="accent">Level</span></h1>
+  <a class="back-link" href="index.html">← Back</a>
+</header>
+
+<div class="grid" id="levelGrid"></div>
+
+<div class="section-title">Or load your own</div>
+<div class="custom-panel">
+  Choose a level JSON exported from the <a href="editor.html">Level Editor</a>.
+  <input id="customLevelInput" type="file" accept="application/json">
+  <div class="custom-error" id="customError"></div>
+</div>
+
+<script src="shared/maze-schema.js"></script>
+<script src="shared/level-io.js"></script>
+<script src="shared/bgm.js"></script>
+<script>
+  window.BGM.playLooping('16bit-retro-music-collection/Pixel Triumph.m4a', 0.5);
+
+  var grid = document.getElementById('levelGrid');
+  fetch('levels/manifest.json').then(function (r) { return r.json(); }).then(function (manifest) {
+    manifest.forEach(function (entry) {
+      var card = document.createElement('a');
+      card.className = 'level-card';
+      card.href = 'game.html?level=' + encodeURIComponent(entry.id);
+      var icon = entry.id.indexOf('random-') === 0 ? '🎲' : '🗺️';
+      card.innerHTML = '<div class="icon">' + icon + '</div><div class="name">' + entry.name + '</div>';
+      grid.appendChild(card);
+    });
+  });
+
+  // Custom level: validate locally, hand off via localStorage (level JSON
+  // can be large — far past what's reasonable to put in a URL — and this
+  // is a static site with no server-side session to stash it in instead),
+  // then hop to game.html?level=custom, which reads it back out.
+  var CUSTOM_LEVEL_KEY = 'torch-maze-custom-level';
+  document.getElementById('customLevelInput').addEventListener('change', function (e) {
+    var file = e.target.files[0];
+    var errorEl = document.getElementById('customError');
+    errorEl.textContent = '';
+    if (!file) return;
+    var reader = new FileReader();
+    reader.onload = function () {
+      var result = window.LevelIO.parseLevelJSON(reader.result);
+      if (!result.ok) { errorEl.textContent = 'Import failed: ' + result.errors.join(', '); return; }
+      localStorage.setItem(CUSTOM_LEVEL_KEY, reader.result);
+      window.location.href = 'game.html?level=custom';
+    };
+    reader.readAsText(file);
+  });
+</script>
+</body>
+</html>

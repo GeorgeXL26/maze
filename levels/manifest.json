@@ -1,4 +1,57 @@
 [
-  { "id": "level1", "name": "Level 1", "file": "level1.json" },
-  { "id": "default", "name": "Tutorial", "file": "default.json" }
+  {
+    "id": "level1",
+    "name": "Level 1",
+    "file": "level1.json"
+  },
+  {
+    "id": "random-01",
+    "name": "Random Maze 1",
+    "file": "random-01.json"
+  },
+  {
+    "id": "random-02",
+    "name": "Random Maze 2",
+    "file": "random-02.json"
+  },
+  {
+    "id": "random-03",
+    "name": "Random Maze 3",
+    "file": "random-03.json"
+  },
+  {
+    "id": "random-04",
+    "name": "Random Maze 4",
+    "file": "random-04.json"
+  },
+  {
+    "id": "random-05",
+    "name": "Random Maze 5",
+    "file": "random-05.json"
+  },
+  {
+    "id": "random-06",
+    "name": "Random Maze 6",
+    "file": "random-06.json"
+  },
+  {
+    "id": "random-07",
+    "name": "Random Maze 7",
+    "file": "random-07.json"
+  },
+  {
+    "id": "random-08",
+    "name": "Random Maze 8",
+    "file": "random-08.json"
+  },
+  {
+    "id": "random-09",
+    "name": "Random Maze 9",
+    "file": "random-09.json"
+  },
+  {
+    "id": "random-10",
+    "name": "Random Maze 10",
+    "file": "random-10.json"
+  }
 ]

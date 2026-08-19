@@ -3,10 +3,23 @@
 <head>
 <meta charset="utf-8">
 <title>Torch Maze</title>
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
   html, body { margin: 0; height: 100%; overflow: hidden; background: #000; }
   canvas { display: block; }
   #hud { position: fixed; top: 10px; left: 10px; color: #fff; font-family: sans-serif; text-shadow: 0 0 4px #000; }
+
+  #quitBtn {
+    position: fixed; top: 14px; right: 14px; z-index: 5;
+    font-family: 'Manrope', sans-serif; font-size: 13px; font-weight: 600;
+    color: #ece1c8; background: linear-gradient(180deg, rgba(30,26,20,0.85), rgba(14,12,9,0.9));
+    border: 1px solid rgba(236,225,200,0.22); border-radius: 8px;
+    padding: 8px 16px; cursor: pointer;
+    transition: border-color 0.15s ease, box-shadow 0.15s ease, transform 0.15s ease;
+  }
+  #quitBtn:hover {
+    border-color: #ffab52; box-shadow: 0 0 16px -2px #ffab52; transform: translateY(-1px);
+  }
 
   #winModal {
     position: fixed; inset: 0; background: rgba(0,0,0,0.75);
@@ -26,6 +39,8 @@
   #winStars { font-size: 42px; letter-spacing: 6px; margin-bottom: 10px; }
   #winStars .filled { color: #ffab52; text-shadow: 0 0 10px rgba(255,171,82,0.6); }
   #winStars .empty { color: #4a4030; }
+  #winStats { display: flex; flex-direction: column; gap: 4px; font-size: 14px; color: #b8ac93; margin-bottom: 8px; }
+  #winStats .met { color: #7cc47c; }
   #winTime { font-size: 14px; color: #b8ac93; margin-bottom: 18px; }
   #winClose {
     background: #33333b; color: #eee; border: 1px solid #454550; border-radius: 6px;
@@ -42,18 +57,14 @@
 </script>
 </head>
 <body>
-<div id="loader" style="position:fixed; top:10px; right:10px; color:#fff; font-family:sans-serif; text-align:right;">
-  <select id="levelSelect"></select>
-  <div style="font-size:12px; margin:4px 0 8px;">Choose a level, or load your own below</div>
-  <input id="customLevelInput" type="file" accept="application/json">
-  <div style="font-size:12px;">Choose a custom level JSON (leave empty to load the selected level)</div>
-</div>
+<button id="quitBtn" type="button">← Quit</button>
 <div id="hud">Loading...</div>
 
 <div id="winModal" class="hidden">
   <div id="winPanel">
     <h2>You escaped!</h2>
     <div id="winStars"></div>
+    <div id="winStats"></div>
     <div id="winTime"></div>
     <button id="winClose" type="button">Close</button>
   </div>
@@ -73,17 +84,25 @@ function loadModel(path) {
 
 var winModal = document.getElementById('winModal');
 var winStarsEl = document.getElementById('winStars');
+var winStatsEl = document.getElementById('winStats');
 var winTimeEl = document.getElementById('winTime');
 document.getElementById('winClose').addEventListener('click', function () {
   winModal.classList.add('hidden');
 });
 
-function showWinModal(stars, elapsedSec) {
+function showWinModal(stars, elapsedSec, coinsCollected, coinsTotal, torchesLit, torchesTotal) {
   var glyphs = '';
   for (var i = 0; i < 3; i++) {
     glyphs += '<span class="' + (i < stars ? 'filled' : 'empty') + '">★</span>';
   }
   winStarsEl.innerHTML = glyphs;
+
+  var coinsDone = coinsCollected >= coinsTotal;
+  var torchesDone = torchesLit >= torchesTotal;
+  winStatsEl.innerHTML =
+    '<div class="' + (coinsDone ? 'met' : '') + '">' + (coinsDone ? '✓' : '·') + ' Coins: ' + coinsCollected + '/' + coinsTotal + '</div>' +
+    '<div class="' + (torchesDone ? 'met' : '') + '">' + (torchesDone ? '✓' : '·') + ' Torches lit: ' + torchesLit + '/' + torchesTotal + '</div>';
+
   winTimeEl.textContent = elapsedSec + 's to escape';
   winModal.classList.remove('hidden');
 }
@@ -135,30 +154,16 @@ async function loadLevelFile(file) {
   return res.json();
 }
 
-function setupLevelSelect(manifest, selectedId) {
-  var select = document.getElementById('levelSelect');
-  manifest.forEach(function (entry) {
-    var opt = document.createElement('option');
-    opt.value = entry.id;
-    opt.textContent = entry.name;
-    if (entry.id === selectedId) opt.selected = true;
-    select.appendChild(opt);
-  });
-  select.addEventListener('change', function () {
-    window.location.search = '?level=' + encodeURIComponent(select.value);
-  });
-}
-
-function loadCustomLevel(file) {
-  return new Promise(function (resolve, reject) {
-    var reader = new FileReader();
-    reader.onload = function () {
-      var result = window.LevelIO.parseLevelJSON(reader.result);
-      if (!result.ok) reject(new Error(result.errors.join(', ')));
-      else resolve(result.data);
-    };
-    reader.readAsText(file);
-  });
+// Level selection now lives on levels.html — this page only ever receives
+// ?level=<id>. A custom level can't fit in a URL, so levels.html stashes
+// its already-validated JSON text in localStorage and links here with
+// ?level=custom instead of a manifest id.
+var CUSTOM_LEVEL_KEY = 'torch-maze-custom-level';
+function loadCustomLevelFromStorage() {
+  var text = localStorage.getItem(CUSTOM_LEVEL_KEY);
+  if (!text) return null;
+  var result = window.LevelIO.parseLevelJSON(text);
+  return result.ok ? result.data : null;
 }
 
 async function startGame(mazeData) {
@@ -237,11 +242,12 @@ async function startGame(mazeData) {
   var torchUnlitTemplate = await loadModel('assets/kaykit-dungeon/gltf/torch.gltf');
   var torchLitTemplate = await loadModel('assets/kaykit-dungeon/gltf/torch_lit.gltf');
   var coinTemplate = await loadModel('assets/kaykit-dungeon/gltf/coin.gltf');
+  var exitFlagTemplate = await loadModel('assets/kaykit-dungeon/gltf/banner_red.gltf');
   var knightTemplate = await loadModel('assets/kaykit-adventurers/characters/Knight.glb');
   knightTemplate.scale.set(PLAYER_SCALE, PLAYER_SCALE, PLAYER_SCALE);
 
   Object.keys(wallTemplates).map(function (k) { return wallTemplates[k]; })
-    .concat([torchUnlitTemplate, torchLitTemplate, coinTemplate, knightTemplate])
+    .concat([torchUnlitTemplate, torchLitTemplate, coinTemplate, exitFlagTemplate, knightTemplate])
     .forEach(function (tpl) {
       collectMaterials(tpl).forEach(applyFogOfWar);
     });
@@ -293,6 +299,12 @@ async function startGame(mazeData) {
     return { data: t, mesh: mesh, light: light, lit: false };
   });
   var lastLitTorchIndex = -1;
+
+  var EXIT_FLAG_SCALE = 0.4;
+  var exitFlagMesh = exitFlagTemplate.clone();
+  exitFlagMesh.scale.set(EXIT_FLAG_SCALE, EXIT_FLAG_SCALE, EXIT_FLAG_SCALE);
+  exitFlagMesh.position.set(mazeData.exit.x, 0, mazeData.exit.y);
+  scene.add(exitFlagMesh);
 
   var ITEM_PICKUP_RADIUS = 0.5;
   var itemMeshes = mazeData.items.map(function (it) {
@@ -403,11 +415,12 @@ async function startGame(mazeData) {
         levelBGM.pause();
         playClip('16bit-retro-music-collection/Victory Arc.m4a');
 
+        var torchesLitCount = torchObjects.filter(function (t) { return t.lit; }).length;
         var stars = 1; // reaching the exit always earns the first star
         if (collectedCount >= mazeData.items.length) stars++;
-        if (torchObjects.every(function (t) { return t.lit; })) stars++;
+        if (torchesLitCount >= torchObjects.length) stars++;
         var elapsedSec = Math.round((performance.now() - levelStartTime) / 1000);
-        showWinModal(stars, elapsedSec);
+        showWinModal(stars, elapsedSec, collectedCount, mazeData.items.length, torchesLitCount, torchObjects.length);
       }
     }
 
@@ -432,20 +445,25 @@ async function startGame(mazeData) {
   animate();
 }
 
-document.getElementById('customLevelInput').addEventListener('change', function (e) {
-  var file = e.target.files[0];
-  if (!file) return;
-  loadCustomLevel(file).then(startGame).catch(function (err) {
-    alert('Failed to load level: ' + err.message);
-  });
+document.getElementById('quitBtn').addEventListener('click', function () {
+  window.location.href = 'levels.html';
 });
 
-loadManifest().then(function (manifest) {
-  var requestedId = new URLSearchParams(window.location.search).get('level');
-  var entry = manifest.find(function (e) { return e.id === requestedId; }) || manifest[0];
-  setupLevelSelect(manifest, entry.id);
-  return loadLevelFile(entry.file);
-}).then(startGame);
+var requestedId = new URLSearchParams(window.location.search).get('level');
+if (requestedId === 'custom') {
+  var customData = loadCustomLevelFromStorage();
+  if (customData) {
+    startGame(customData);
+  } else {
+    alert('No custom level found — pick a level again.');
+    window.location.href = 'levels.html';
+  }
+} else {
+  loadManifest().then(function (manifest) {
+    var entry = manifest.find(function (e) { return e.id === requestedId; }) || manifest[0];
+    return loadLevelFile(entry.file);
+  }).then(startGame);
+}
 </script>
 </body>
 </html>

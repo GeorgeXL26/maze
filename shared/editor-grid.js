@@ -1,5 +1,8 @@
 // shared/editor-grid.js
-window.EditorGrid = (function () {
+// `window` doesn't exist under Node (tools/generate-levels.js requires this
+// file directly) — build the module against a plain object and only touch
+// `window` when it's actually there.
+var EditorGridModule = (function () {
   var TOOLS = { WALL: 'wall', FLOOR: 'floor', TORCH: 'torch', ITEM: 'item', START: 'start', EXIT: 'exit' };
 
   function pixelToCell(px, py, cellSize) {
@@ -131,3 +134,10 @@ window.EditorGrid = (function () {
     generateMaze: generateMaze
   };
 })();
+
+// Dual-environment export: browsers get window.EditorGrid; Node tooling
+// (tools/generate-levels.js) can `require()` this file directly to reuse
+// the exact same generateMaze — one source of truth for the maze
+// algorithm, instead of a second copy living in the generation script.
+if (typeof window !== 'undefined') window.EditorGrid = EditorGridModule;
+if (typeof module !== 'undefined' && module.exports) module.exports = EditorGridModule;
