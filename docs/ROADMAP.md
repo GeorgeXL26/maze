@@ -45,17 +45,23 @@ that need to path around both.
 
 ## Phase 1: Asset library wiki page
 
-A single reference page listing every vendored model — dungeon props,
-characters, weapons/equipment, animation clips — so it's easy to browse
-"what do we have" while deciding what to build next, without digging through
-`assets/` by hand.
+A single reference page listing everything vendored — dungeon props,
+characters, weapons/equipment, animation clips, **and audio** (music tracks
+and sound effects) — so it's easy to browse "what do we have" while deciding
+what to build next, without digging through `assets/` by hand.
 
-- Two views: **by pack** (dungeon/adventurers/skeletons/animations) and **by
-  status** (wired-in vs. available-but-unused) — the status view is probably
-  the more useful one day-to-day.
+- Two views: **by pack** (dungeon/adventurers/skeletons/animations/audio) and
+  **by status** (wired-in vs. available-but-unused) — the status view is
+  probably the more useful one day-to-day.
 - Tag each item with which later phase would use it (barrel → "pushable,
   Phase 2"; shield → "Phase 3 equipment"; skeleton → "Phase 4 enemy"), so the
   wiki doubles as a "what's next" index, not just a static inventory.
+- **Audio needs its own listing shape**, distinct from the visual catalog:
+  a playable preview (not just a thumbnail image) is the only way to
+  actually evaluate a sound or track, and each entry should carry its
+  license/attribution terms inline (per-pack terms vary today — see
+  `assets/audio/README.md` — CC0/no-attribution, credit-if-monetized, etc.),
+  plus flag known gaps like the still-unsourced torch-ignite effect.
 - Text/catalog reference to start. Once Phase 2's thumbnail generation
   exists, reuse those images here instead of a text-only list.
 
