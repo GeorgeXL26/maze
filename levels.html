@@ -9,6 +9,7 @@
   :root {
     --void: #0b0a08; --parchment: #ece1c8; --parchment-dim: #b8ac93;
     --torch: #ffab52; --torch-hot: #ffd08a; --moss: #7c8f6a;
+    --easy: #7cc47c; --medium: #ffcf5c; --hard: #ff8c42; --nightmare: #e0473e;
   }
   * { box-sizing: border-box; }
   html, body { margin: 0; min-height: 100%; background: var(--void); }
@@ -20,18 +21,32 @@
   .back-link { font-size: 0.85rem; color: var(--parchment-dim); text-decoration: none; border-bottom: 1px solid transparent; }
   .back-link:hover { border-color: var(--parchment-dim); }
 
-  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 14px; margin-bottom: 3rem; }
+  .tier { margin-bottom: 2.6rem; }
+  .tier-title {
+    font-family: 'Manrope', sans-serif; font-weight: 700; font-size: 0.78rem;
+    letter-spacing: 0.16em; text-transform: uppercase; margin: 0 0 1rem;
+    display: flex; align-items: center; gap: 8px;
+  }
+  .tier-title .dot { width: 9px; height: 9px; border-radius: 50%; display: inline-block; }
+  .tier-title .count { color: var(--parchment-dim); font-weight: 500; text-transform: none; letter-spacing: normal; }
+
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 12px; }
   .level-card {
     display: block; text-decoration: none; color: var(--parchment);
-    border: 1px solid rgba(236, 225, 200, 0.16); border-radius: 10px;
-    padding: 1.2rem 1.3rem; background: linear-gradient(180deg, rgba(30, 26, 20, 0.72), rgba(14, 12, 9, 0.82));
+    border: 1px solid rgba(236, 225, 200, 0.16); border-left: 3px solid rgba(236, 225, 200, 0.16);
+    border-radius: 8px; padding: 1rem 1.1rem;
+    background: linear-gradient(180deg, rgba(30, 26, 20, 0.72), rgba(14, 12, 9, 0.82));
     transition: border-color 0.2s ease, transform 0.2s ease;
   }
-  .level-card:hover, .level-card:focus-visible { border-color: var(--torch); transform: translateY(-2px); }
-  .level-card .icon { font-size: 1.6rem; }
-  .level-card .name { font-family: 'Fraunces', serif; font-weight: 560; font-size: 1.05rem; margin-top: 0.5rem; }
+  .level-card:hover, .level-card:focus-visible { transform: translateY(-2px); }
+  .level-card .icon { font-size: 1.4rem; }
+  .level-card .name { font-family: 'Fraunces', serif; font-weight: 560; font-size: 0.98rem; margin-top: 0.45rem; }
+  .level-card .meta { font-size: 0.72rem; color: var(--parchment-dim); margin-top: 0.2rem; }
 
-  .section-title { font-family: 'Manrope', sans-serif; font-weight: 700; font-size: 0.78rem; letter-spacing: 0.16em; text-transform: uppercase; color: var(--torch); margin: 0 0 1rem; }
+  .section-title {
+    font-family: 'Manrope', sans-serif; font-weight: 700; font-size: 0.78rem; letter-spacing: 0.16em;
+    text-transform: uppercase; color: var(--torch); margin: 0 0 1rem;
+  }
   .custom-panel {
     border: 1px dashed rgba(236, 225, 200, 0.3); border-radius: 10px; padding: 1.4rem;
     max-width: 32rem; font-size: 0.88rem; color: var(--parchment-dim);
@@ -46,7 +61,7 @@
   <a class="back-link" href="index.html">← Back</a>
 </header>
 
-<div class="grid" id="levelGrid"></div>
+<div id="levelPanels"></div>
 
 <div class="section-title">Or load your own</div>
 <div class="custom-panel">
@@ -61,15 +76,54 @@
 <script>
   window.BGM.playLooping('16bit-retro-music-collection/Pixel Triumph.m4a', 0.5);
 
-  var grid = document.getElementById('levelGrid');
+  // Tiers rendered in this fixed order regardless of manifest order.
+  // "" (no difficulty field) covers hand-authored levels like Level 1.
+  var TIER_ORDER = ['', 'easy', 'medium', 'hard', 'nightmare'];
+  var TIER_META = {
+    '': { title: 'Hand-crafted', color: 'var(--parchment-dim)' },
+    easy: { title: 'Easy — 30×30', color: 'var(--easy)' },
+    medium: { title: 'Medium — 50×50', color: 'var(--medium)' },
+    hard: { title: 'Hard — 80×80', color: 'var(--hard)' },
+    nightmare: { title: 'Nightmare — 100×100', color: 'var(--nightmare)' }
+  };
+
+  var panelsEl = document.getElementById('levelPanels');
   fetch('levels/manifest.json').then(function (r) { return r.json(); }).then(function (manifest) {
+    var byTier = {};
     manifest.forEach(function (entry) {
-      var card = document.createElement('a');
-      card.className = 'level-card';
-      card.href = 'game.html?level=' + encodeURIComponent(entry.id);
-      var icon = entry.id.indexOf('random-') === 0 ? '🎲' : '🗺️';
-      card.innerHTML = '<div class="icon">' + icon + '</div><div class="name">' + entry.name + '</div>';
-      grid.appendChild(card);
+      var key = entry.difficulty || '';
+      if (!byTier[key]) byTier[key] = [];
+      byTier[key].push(entry);
+    });
+
+    TIER_ORDER.forEach(function (key) {
+      var entries = byTier[key];
+      if (!entries || !entries.length) return;
+      var meta = TIER_META[key];
+
+      var tierEl = document.createElement('div');
+      tierEl.className = 'tier';
+
+      var titleEl = document.createElement('div');
+      titleEl.className = 'tier-title';
+      titleEl.style.color = meta.color;
+      titleEl.innerHTML = '<span class="dot" style="background:' + meta.color + '"></span>' +
+        meta.title + ' <span class="count">(' + entries.length + ')</span>';
+      tierEl.appendChild(titleEl);
+
+      var gridEl = document.createElement('div');
+      gridEl.className = 'grid';
+      entries.forEach(function (entry) {
+        var card = document.createElement('a');
+        card.className = 'level-card';
+        card.style.borderLeftColor = meta.color;
+        card.href = 'game.html?level=' + encodeURIComponent(entry.id);
+        var icon = key ? '🎲' : '🗺️';
+        card.innerHTML = '<div class="icon">' + icon + '</div><div class="name">' + entry.name + '</div>';
+        gridEl.appendChild(card);
+      });
+      tierEl.appendChild(gridEl);
+      panelsEl.appendChild(tierEl);
     });
   });
 

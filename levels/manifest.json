@@ -5,53 +5,243 @@
     "file": "level1.json"
   },
   {
-    "id": "random-01",
-    "name": "Random Maze 1",
-    "file": "random-01.json"
+    "id": "easy-01",
+    "name": "Easy 1",
+    "file": "easy-01.json",
+    "difficulty": "easy"
   },
   {
-    "id": "random-02",
-    "name": "Random Maze 2",
-    "file": "random-02.json"
+    "id": "easy-02",
+    "name": "Easy 2",
+    "file": "easy-02.json",
+    "difficulty": "easy"
   },
   {
-    "id": "random-03",
-    "name": "Random Maze 3",
-    "file": "random-03.json"
+    "id": "easy-03",
+    "name": "Easy 3",
+    "file": "easy-03.json",
+    "difficulty": "easy"
   },
   {
-    "id": "random-04",
-    "name": "Random Maze 4",
-    "file": "random-04.json"
+    "id": "easy-04",
+    "name": "Easy 4",
+    "file": "easy-04.json",
+    "difficulty": "easy"
   },
   {
-    "id": "random-05",
-    "name": "Random Maze 5",
-    "file": "random-05.json"
+    "id": "easy-05",
+    "name": "Easy 5",
+    "file": "easy-05.json",
+    "difficulty": "easy"
   },
   {
-    "id": "random-06",
-    "name": "Random Maze 6",
-    "file": "random-06.json"
+    "id": "easy-06",
+    "name": "Easy 6",
+    "file": "easy-06.json",
+    "difficulty": "easy"
   },
   {
-    "id": "random-07",
-    "name": "Random Maze 7",
-    "file": "random-07.json"
+    "id": "easy-07",
+    "name": "Easy 7",
+    "file": "easy-07.json",
+    "difficulty": "easy"
   },
   {
-    "id": "random-08",
-    "name": "Random Maze 8",
-    "file": "random-08.json"
+    "id": "easy-08",
+    "name": "Easy 8",
+    "file": "easy-08.json",
+    "difficulty": "easy"
   },
   {
-    "id": "random-09",
-    "name": "Random Maze 9",
-    "file": "random-09.json"
+    "id": "easy-09",
+    "name": "Easy 9",
+    "file": "easy-09.json",
+    "difficulty": "easy"
   },
   {
-    "id": "random-10",
-    "name": "Random Maze 10",
-    "file": "random-10.json"
+    "id": "easy-10",
+    "name": "Easy 10",
+    "file": "easy-10.json",
+    "difficulty": "easy"
+  },
+  {
+    "id": "medium-01",
+    "name": "Medium 1",
+    "file": "medium-01.json",
+    "difficulty": "medium"
+  },
+  {
+    "id": "medium-02",
+    "name": "Medium 2",
+    "file": "medium-02.json",
+    "difficulty": "medium"
+  },
+  {
+    "id": "medium-03",
+    "name": "Medium 3",
+    "file": "medium-03.json",
+    "difficulty": "medium"
+  },
+  {
+    "id": "medium-04",
+    "name": "Medium 4",
+    "file": "medium-04.json",
+    "difficulty": "medium"
+  },
+  {
+    "id": "medium-05",
+    "name": "Medium 5",
+    "file": "medium-05.json",
+    "difficulty": "medium"
+  },
+  {
+    "id": "medium-06",
+    "name": "Medium 6",
+    "file": "medium-06.json",
+    "difficulty": "medium"
+  },
+  {
+    "id": "medium-07",
+    "name": "Medium 7",
+    "file": "medium-07.json",
+    "difficulty": "medium"
+  },
+  {
+    "id": "medium-08",
+    "name": "Medium 8",
+    "file": "medium-08.json",
+    "difficulty": "medium"
+  },
+  {
+    "id": "medium-09",
+    "name": "Medium 9",
+    "file": "medium-09.json",
+    "difficulty": "medium"
+  },
+  {
+    "id": "medium-10",
+    "name": "Medium 10",
+    "file": "medium-10.json",
+    "difficulty": "medium"
+  },
+  {
+    "id": "hard-01",
+    "name": "Hard 1",
+    "file": "hard-01.json",
+    "difficulty": "hard"
+  },
+  {
+    "id": "hard-02",
+    "name": "Hard 2",
+    "file": "hard-02.json",
+    "difficulty": "hard"
+  },
+  {
+    "id": "hard-03",
+    "name": "Hard 3",
+    "file": "hard-03.json",
+    "difficulty": "hard"
+  },
+  {
+    "id": "hard-04",
+    "name": "Hard 4",
+    "file": "hard-04.json",
+    "difficulty": "hard"
+  },
+  {
+    "id": "hard-05",
+    "name": "Hard 5",
+    "file": "hard-05.json",
+    "difficulty": "hard"
+  },
+  {
+    "id": "hard-06",
+    "name": "Hard 6",
+    "file": "hard-06.json",
+    "difficulty": "hard"
+  },
+  {
+    "id": "hard-07",
+    "name": "Hard 7",
+    "file": "hard-07.json",
+    "difficulty": "hard"
+  },
+  {
+    "id": "hard-08",
+    "name": "Hard 8",
+    "file": "hard-08.json",
+    "difficulty": "hard"
+  },
+  {
+    "id": "hard-09",
+    "name": "Hard 9",
+    "file": "hard-09.json",
+    "difficulty": "hard"
+  },
+  {
+    "id": "hard-10",
+    "name": "Hard 10",
+    "file": "hard-10.json",
+    "difficulty": "hard"
+  },
+  {
+    "id": "nightmare-01",
+    "name": "Nightmare 1",
+    "file": "nightmare-01.json",
+    "difficulty": "nightmare"
+  },
+  {
+    "id": "nightmare-02",
+    "name": "Nightmare 2",
+    "file": "nightmare-02.json",
+    "difficulty": "nightmare"
+  },
+  {
+    "id": "nightmare-03",
+    "name": "Nightmare 3",
+    "file": "nightmare-03.json",
+    "difficulty": "nightmare"
+  },
+  {
+    "id": "nightmare-04",
+    "name": "Nightmare 4",
+    "file": "nightmare-04.json",
+    "difficulty": "nightmare"
+  },
+  {
+    "id": "nightmare-05",
+    "name": "Nightmare 5",
+    "file": "nightmare-05.json",
+    "difficulty": "nightmare"
+  },
+  {
+    "id": "nightmare-06",
+    "name": "Nightmare 6",
+    "file": "nightmare-06.json",
+    "difficulty": "nightmare"
+  },
+  {
+    "id": "nightmare-07",
+    "name": "Nightmare 7",
+    "file": "nightmare-07.json",
+    "difficulty": "nightmare"
+  },
+  {
+    "id": "nightmare-08",
+    "name": "Nightmare 8",
+    "file": "nightmare-08.json",
+    "difficulty": "nightmare"
+  },
+  {
+    "id": "nightmare-09",
+    "name": "Nightmare 9",
+    "file": "nightmare-09.json",
+    "difficulty": "nightmare"
+  },
+  {
+    "id": "nightmare-10",
+    "name": "Nightmare 10",
+    "file": "nightmare-10.json",
+    "difficulty": "nightmare"
   }
 ]
