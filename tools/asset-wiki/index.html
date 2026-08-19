@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Torch Maze — Asset Wiki</title>
+<style>
+  body { font-family: system-ui, sans-serif; margin: 0; background: #1b1b1f; color: #eee; }
+  header { padding: 16px 20px; background: #26262c; border-bottom: 1px solid #3a3a42; }
+  header h1 { margin: 0 0 10px; font-size: 18px; }
+  .tabs { display: flex; gap: 8px; }
+  .tabs button { background: #33333b; color: #eee; border: 1px solid #454550; border-radius: 6px; padding: 6px 12px; cursor: pointer; font-size: 13px; }
+  .tabs button.active { background: #f2a900; color: #1b1b1f; border-color: #f2a900; }
+  #search { margin: 12px 20px 0; padding: 6px 10px; width: 280px; border-radius: 6px; border: 1px solid #454550; background: #26262c; color: #eee; }
+  main { padding: 16px 20px 40px; }
+  details.pack, details.category { border: 1px solid #3a3a42; border-radius: 6px; margin-bottom: 8px; background: #212127; }
+  details.pack > summary, details.category > summary { padding: 8px 12px; cursor: pointer; font-weight: bold; }
+  details.category > summary { font-weight: normal; font-size: 13px; color: #ccc; }
+  .row { display: flex; align-items: center; gap: 10px; padding: 5px 14px; border-top: 1px solid #2a2a30; font-size: 13px; }
+  .row .path { color: #888; font-size: 11px; margin-left: auto; }
+  .badge { font-size: 10px; padding: 2px 6px; border-radius: 4px; }
+  .badge.wired-in { background: #2d7d46; color: #fff; }
+  .badge.unused { background: #555; color: #ddd; }
+  .badge.phase { background: #4a3d8f; color: #fff; }
+  audio { height: 28px; }
+  .readme { padding: 8px 14px; font-size: 12px; color: #ccc; }
+  .readme h2, .readme h3 { font-size: 13px; margin: 8px 0 4px; }
+  .readme code { background: #33333b; padding: 1px 4px; border-radius: 3px; }
+  .hidden { display: none; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Torch Maze — Asset Wiki</h1>
+  <div class="tabs">
+    <button data-view="pack" class="active">By pack</button>
+    <button data-view="status">By status</button>
+    <button data-view="audio">Audio</button>
+  </div>
+  <input id="search" type="text" placeholder="Search models…">
+</header>
+<main id="main">Loading…</main>
+<script src="app.js"></script>
+</body>
+</html>
