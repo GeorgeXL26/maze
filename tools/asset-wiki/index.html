@@ -3,6 +3,14 @@
 <head>
 <meta charset="utf-8">
 <title>Torch Maze — Asset Wiki</title>
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+    "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+  }
+}
+</script>
 <style>
   body { font-family: system-ui, sans-serif; margin: 0; background: #1b1b1f; color: #eee; }
   header { padding: 16px 20px; background: #26262c; border-bottom: 1px solid #3a3a42; }
@@ -26,6 +34,20 @@
   .readme h2, .readme h3 { font-size: 13px; margin: 8px 0 4px; }
   .readme code { background: #33333b; padding: 1px 4px; border-radius: 3px; }
   .hidden { display: none; }
+
+  .row img.thumb { width: 40px; height: 40px; object-fit: contain; background: #2a2a30; border-radius: 4px; flex-shrink: 0; cursor: pointer; }
+  .row img.thumb.thumb-missing { visibility: hidden; }
+
+  #viewerModal {
+    position: fixed; inset: 0; background: rgba(0,0,0,0.72);
+    display: flex; align-items: center; justify-content: center; z-index: 10;
+  }
+  #viewerPanel { background: #212127; border: 1px solid #3a3a42; border-radius: 8px; padding: 14px; }
+  #viewerCanvasWrap { width: 480px; height: 480px; background: #14141a; border-radius: 6px; overflow: hidden; }
+  #viewerCanvasWrap canvas { display: block; cursor: grab; }
+  #viewerHeader { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; gap: 12px; }
+  #viewerLabel { font-size: 13px; color: #eee; }
+  #viewerClose { background: #33333b; color: #eee; border: 1px solid #454550; border-radius: 6px; padding: 4px 10px; cursor: pointer; font-size: 12px; }
 </style>
 </head>
 <body>
@@ -39,6 +61,17 @@
   <input id="search" type="text" placeholder="Search models…">
 </header>
 <main id="main">Loading…</main>
-<script src="app.js"></script>
+
+<div id="viewerModal" class="hidden">
+  <div id="viewerPanel">
+    <div id="viewerHeader">
+      <span id="viewerLabel"></span>
+      <button id="viewerClose" type="button">✕ Close</button>
+    </div>
+    <div id="viewerCanvasWrap"></div>
+  </div>
+</div>
+
+<script type="module" src="app.js"></script>
 </body>
 </html>
