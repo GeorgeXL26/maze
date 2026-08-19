@@ -69,6 +69,38 @@ assertTrue(split.packs['kenney-rpg-audio'].indexOf('CC0') !== -1, 'splitReadmeBy
 assertTrue(split.packs['spooky-playtime-davidkbd'].indexOf('CC BY 4.0') !== -1, 'splitReadmeByPack: captures the spooky-playtime-davidkbd section');
 assertTrue(split.extra['Known gap'].indexOf('Torch-ignite') !== -1, 'splitReadmeByPack: captures the trailing Known gap section separately from any pack');
 
+// scan.js: buildModelCatalog / readSourceTexts / withStatusAndTags
+var path = require('path');
+var scan = require('./scan.js');
+var REPO_ROOT = path.join(__dirname, '..', '..');
+
+var modelEntries = scan.buildModelCatalog(REPO_ROOT);
+assertEqual(modelEntries.length, 281,
+  'buildModelCatalog: total entries across all 4 packs (investigate before continuing if this differs — a file was likely added/removed from assets/ since this plan was written)');
+
+var byPack = {};
+modelEntries.forEach(function (e) { byPack[e.pack] = (byPack[e.pack] || 0) + 1; });
+assertEqual(byPack['kaykit-dungeon'], 211, 'buildModelCatalog: kaykit-dungeon count');
+assertEqual(byPack['kaykit-adventurers'], 39, 'buildModelCatalog: kaykit-adventurers count (6 characters + 31 equipment + 2 duplicated animation clips)');
+assertEqual(byPack['kaykit-skeletons'], 17, 'buildModelCatalog: kaykit-skeletons count (4 characters + 13 equipment)');
+assertEqual(byPack['kaykit-character-animations'], 14, 'buildModelCatalog: kaykit-character-animations count (6 Rig_Large + 8 Rig_Medium clips)');
+
+var skeletonCategories = modelEntries.filter(function (e) { return e.pack === 'kaykit-skeletons'; }).map(function (e) { return e.category; });
+assertTrue(skeletonCategories.indexOf('skeleton') === -1, 'buildModelCatalog: skeleton pack-noun prefix is stripped — no entry falls into a generic "skeleton" category');
+assertTrue(skeletonCategories.indexOf('mage') !== -1, 'buildModelCatalog: Skeleton_Mage.glb becomes category "mage"');
+
+var animEntry = modelEntries.filter(function (e) { return e.id === 'Rig_Large_CombatMelee'; })[0];
+assertEqual(animEntry.rig, 'Rig_Large', 'buildModelCatalog: animation clip entries carry a rig field');
+assertEqual(animEntry.category, 'combatmelee', 'buildModelCatalog: animation clip entries derive category from the clip name');
+
+var sourceTexts = scan.readSourceTexts(REPO_ROOT);
+var withStatus = scan.withStatusAndTags(modelEntries, sourceTexts, []);
+var wiredIn = withStatus.filter(function (e) { return e.status === 'wired-in'; });
+assertEqual(wiredIn.length, 10,
+  'withStatusAndTags: exactly the 10 paths currently referenced in game.html/editor.html are wired-in (investigate before continuing if this differs — game.html/editor.html were likely edited since this plan was written)');
+assertTrue(wiredIn.map(function (e) { return e.id; }).indexOf('wall') !== -1, 'withStatusAndTags: the wall model is wired-in');
+assertTrue(withStatus.filter(function (e) { return e.id === 'banner_red'; })[0].status === 'unused', 'withStatusAndTags: a never-referenced model (banner_red) is unused');
+
 // --- TASK 2/3/4 TESTS GET APPENDED ABOVE THIS LINE ---
 
 var failed = results.filter(function (r) { return r.indexOf('FAIL') === 0; });
