@@ -101,6 +101,20 @@ assertEqual(wiredIn.length, 10,
 assertTrue(wiredIn.map(function (e) { return e.id; }).indexOf('wall') !== -1, 'withStatusAndTags: the wall model is wired-in');
 assertTrue(withStatus.filter(function (e) { return e.id === 'banner_red'; })[0].status === 'unused', 'withStatusAndTags: a never-referenced model (banner_red) is unused');
 
+// phase-tags.js: curated data sanity checks
+var phaseTags = require('./phase-tags.js');
+assertTrue(phaseTags.length >= 30, 'phase-tags.js: has a substantial number of curated entries');
+var badPhaseTag = phaseTags.filter(function (t) { return t.phase < 2 || t.phase > 6 || !t.note; })[0];
+assertEqual(badPhaseTag, undefined, 'phase-tags.js: every entry has a phase in 2..6 and a non-empty note');
+
+var taggedEntries = scan.withStatusAndTags(modelEntries, sourceTexts, phaseTags);
+var chest = taggedEntries.filter(function (e) { return e.id === 'chest'; })[0];
+assertEqual(chest.phaseTag, { phase: 2, note: 'key/chest puzzle chain — chest reveals an item' }, 'phase-tags.js: kaykit-dungeon/chest is tagged Phase 2');
+var skeletonMinion = taggedEntries.filter(function (e) { return e.id === 'Skeleton_Minion'; })[0];
+assertEqual(skeletonMinion.phaseTag.phase, 4, 'phase-tags.js: the skeleton minion character is tagged Phase 4');
+var untaggedCategoryCount = taggedEntries.filter(function (e) { return e.category === 'mug'; }).filter(function (e) { return e.phaseTag !== null; }).length;
+assertEqual(untaggedCategoryCount, 0, 'phase-tags.js: categories with no curated entry (e.g. mug) stay untagged rather than guessing');
+
 // --- TASK 2/3/4 TESTS GET APPENDED ABOVE THIS LINE ---
 
 var failed = results.filter(function (r) { return r.indexOf('FAIL') === 0; });
