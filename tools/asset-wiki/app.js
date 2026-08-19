@@ -62,12 +62,27 @@ function addStandardLights(scene) {
 }
 
 // --- Thumbnail snapshots (list rows) ---------------------------------
+// WebGL context creation can fail (disabled hardware acceleration, no GPU,
+// browser policy, etc.) — that must never take down the rest of the page
+// (the catalog list and audio tab don't need WebGL at all), so every
+// three.js entry point here is defensive: webglAvailable gates all of it,
+// and thumbnails/the 3D viewer just quietly become unavailable instead of
+// throwing during module load and breaking everything after them.
+var webglAvailable = true;
 var THUMB_SIZE = 96;
-var thumbRenderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, preserveDrawingBuffer: true });
-thumbRenderer.setSize(THUMB_SIZE, THUMB_SIZE);
-var thumbScene = new THREE.Scene();
-var thumbCamera = new THREE.PerspectiveCamera(35, 1, 0.05, 500);
-addStandardLights(thumbScene);
+var thumbRenderer = null;
+var thumbScene = null;
+var thumbCamera = null;
+try {
+  thumbRenderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, preserveDrawingBuffer: true });
+  thumbRenderer.setSize(THUMB_SIZE, THUMB_SIZE);
+  thumbScene = new THREE.Scene();
+  thumbCamera = new THREE.PerspectiveCamera(35, 1, 0.05, 500);
+  addStandardLights(thumbScene);
+} catch (err) {
+  console.warn('Asset wiki: WebGL unavailable, thumbnails and the 3D viewer are disabled.', err);
+  webglAvailable = false;
+}
 
 var thumbnailCache = {}; // "pack::id" -> data URL (or 'failed')
 var thumbInFlight = {};
@@ -75,6 +90,7 @@ var thumbInFlight = {};
 function snapshotKey(entry) { return entry.pack + '::' + entry.id; }
 
 function renderThumbnailFor(entry, imgEl) {
+  if (!webglAvailable) { imgEl.classList.add('thumb-missing'); return; }
   var key = snapshotKey(entry);
   if (thumbnailCache[key]) {
     if (thumbnailCache[key] !== 'failed') imgEl.src = thumbnailCache[key];
@@ -132,18 +148,26 @@ var viewerRafId = null;
 var viewerCurrentModel = null;
 
 function ensureViewer() {
-  if (viewerRenderer) return;
-  viewerRenderer = new THREE.WebGLRenderer({ antialias: true });
-  viewerRenderer.setSize(480, 480);
-  viewerCanvasWrap.appendChild(viewerRenderer.domElement);
+  if (viewerRenderer) return true;
+  if (!webglAvailable) return false;
+  try {
+    viewerRenderer = new THREE.WebGLRenderer({ antialias: true });
+    viewerRenderer.setSize(480, 480);
+    viewerCanvasWrap.appendChild(viewerRenderer.domElement);
 
-  viewerScene = new THREE.Scene();
-  viewerScene.background = new THREE.Color(0x14141a);
-  addStandardLights(viewerScene);
+    viewerScene = new THREE.Scene();
+    viewerScene.background = new THREE.Color(0x14141a);
+    addStandardLights(viewerScene);
 
-  viewerCamera = new THREE.PerspectiveCamera(40, 1, 0.05, 500);
-  viewerControls = new OrbitControls(viewerCamera, viewerRenderer.domElement);
-  viewerControls.enableDamping = true;
+    viewerCamera = new THREE.PerspectiveCamera(40, 1, 0.05, 500);
+    viewerControls = new OrbitControls(viewerCamera, viewerRenderer.domElement);
+    viewerControls.enableDamping = true;
+    return true;
+  } catch (err) {
+    console.warn('Asset wiki: could not start the 3D viewer.', err);
+    webglAvailable = false;
+    return false;
+  }
 }
 
 function stopViewerLoop() {
@@ -159,7 +183,10 @@ function viewerLoop() {
 }
 
 function openViewer(entry) {
-  ensureViewer();
+  if (!ensureViewer()) {
+    console.warn('3D viewer unavailable (no WebGL) — cannot open', entry.path);
+    return;
+  }
   viewerLabel.textContent = entry.label + ' (' + entry.pack + '/' + entry.category + ')';
   viewerModal.classList.remove('hidden');
 
