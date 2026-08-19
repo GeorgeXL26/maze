@@ -89,8 +89,55 @@ function withStatusAndTags(entries, sourceTexts, phaseTags) {
   });
 }
 
+// Some packs (kenney-music-jingles) nest their audio files a level deeper,
+// grouped into style subfolders ("Steel jingles/", "Sax jingles/", ...)
+// rather than sitting flat in the pack directory — so this walks the whole
+// pack subtree instead of assuming a flat list. (Caught during planning:
+// a flat readdirSync on kenney-music-jingles returns 0 files.)
+function listAudioFilesRecursive(dir, relPrefix) {
+  var out = [];
+  fs.readdirSync(dir).sort().forEach(function (name) {
+    var full = path.join(dir, name);
+    var rel = relPrefix + '/' + name;
+    if (fs.statSync(full).isDirectory()) {
+      out = out.concat(listAudioFilesRecursive(full, rel));
+    } else if (/\.(ogg|m4a|mp3|wav)$/i.test(name)) {
+      out.push({ file: name, path: rel });
+    }
+  });
+  return out;
+}
+
+function buildAudioCatalog(rootDir) {
+  var audioDir = path.join(rootDir, 'assets/audio');
+  var packDirs = fs.readdirSync(audioDir).filter(function (name) {
+    return fs.statSync(path.join(audioDir, name)).isDirectory();
+  }).sort();
+
+  var readme = fs.readFileSync(path.join(audioDir, 'README.md'), 'utf8');
+  var split = lib.splitReadmeByPack(readme);
+
+  var packs = packDirs.map(function (packName) {
+    var dir = path.join(audioDir, packName);
+    var files = listAudioFilesRecursive(dir, 'assets/audio/' + packName);
+    return {
+      pack: packName,
+      readmeHtml: split.packs[packName] ? lib.mdLiteToHtml(split.packs[packName]) : null,
+      files: files
+    };
+  });
+
+  var extra = {};
+  Object.keys(split.extra).forEach(function (key) {
+    extra[key] = lib.mdLiteToHtml(split.extra[key]);
+  });
+
+  return { packs: packs, extra: extra };
+}
+
 module.exports = {
   buildModelCatalog: buildModelCatalog,
   readSourceTexts: readSourceTexts,
-  withStatusAndTags: withStatusAndTags
+  withStatusAndTags: withStatusAndTags,
+  buildAudioCatalog: buildAudioCatalog
 };

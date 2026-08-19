@@ -115,6 +115,23 @@ assertEqual(skeletonMinion.phaseTag.phase, 4, 'phase-tags.js: the skeleton minio
 var untaggedCategoryCount = taggedEntries.filter(function (e) { return e.category === 'mug'; }).filter(function (e) { return e.phaseTag !== null; }).length;
 assertEqual(untaggedCategoryCount, 0, 'phase-tags.js: categories with no curated entry (e.g. mug) stay untagged rather than guessing');
 
+// scan.js: buildAudioCatalog
+var audioCatalog = scan.buildAudioCatalog(REPO_ROOT);
+var audioByPack = {};
+audioCatalog.packs.forEach(function (p) { audioByPack[p.pack] = p.files.length; });
+assertEqual(audioByPack['16bit-retro-music-collection'], 13, 'buildAudioCatalog: 16bit-retro-music-collection file count');
+assertEqual(audioByPack['kenney-rpg-audio'], 51, 'buildAudioCatalog: kenney-rpg-audio file count');
+assertEqual(audioByPack['spooky-playtime-davidkbd'], 10, 'buildAudioCatalog: spooky-playtime-davidkbd file count');
+assertEqual(audioByPack['kenney-music-jingles'], 85,
+  'buildAudioCatalog: kenney-music-jingles file count — this pack nests files one level deeper in style subfolders (e.g. "8-Bit jingles/"), so a flat (non-recursive) directory read would wrongly return 0');
+
+var kenneyPack = audioCatalog.packs.filter(function (p) { return p.pack === 'kenney-rpg-audio'; })[0];
+assertTrue(kenneyPack.readmeHtml.indexOf('CC0') !== -1, 'buildAudioCatalog: readmeHtml is populated from the real README.md, per pack');
+assertTrue(audioCatalog.extra['Known gap'].indexOf('Torch-ignite') !== -1, 'buildAudioCatalog: the trailing "Known gap" section is captured separately from any pack');
+
+var jingleFile = audioCatalog.packs.filter(function (p) { return p.pack === 'kenney-music-jingles'; })[0].files[0];
+assertTrue(jingleFile.path.indexOf('assets/audio/kenney-music-jingles/') === 0, 'buildAudioCatalog: nested jingle file paths still start with the pack path');
+
 // --- TASK 2/3/4 TESTS GET APPENDED ABOVE THIS LINE ---
 
 var failed = results.filter(function (r) { return r.indexOf('FAIL') === 0; });
