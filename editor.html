@@ -57,6 +57,7 @@
     <input id="heightInput" type="number" value="15" min="3" max="200" style="width:50px;">
     <button class="action" id="resizeBtn">Resize</button>
   </div>
+  <button class="action" id="generateMazeBtn">🎲 Generate Maze</button>
   <hr>
   <button class="action" id="exportBtn">Export JSON</button>
   <input id="importInput" type="file" accept="application/json">
@@ -67,7 +68,8 @@
   <div style="font-size:12px; color:#555;">
     Drag an icon from above onto the map to place it, or select a tool then left-click/drag to paint.<br>
     Drag a placed torch, item, start, or exit marker to move it.<br>
-    Select "Pan" or right-click drag to pan the view; scroll to zoom.
+    Select "Pan" or right-click drag to pan the view; scroll to zoom.<br>
+    "Generate Maze" replaces the walls only — re-place torches/items/start/exit and Validate afterward.
   </div>
 </div>
 <div id="viewport"></div>
@@ -429,6 +431,17 @@ document.getElementById('resizeBtn').addEventListener('click', function () {
   var w = parseInt(document.getElementById('widthInput').value, 10);
   var h = parseInt(document.getElementById('heightInput').value, 10);
   data = window.EditorGrid.resizeGrid(data, w, h);
+  rebuildAll();
+});
+
+// Walls only — torches, items, start, and exit are left exactly where they
+// are. A freshly generated maze can leave any of those sitting on a wall
+// cell or in an unreachable pocket; the existing Validate button already
+// surfaces exactly that (start/exit-not-on-floor, unreachable items) so
+// there's nothing new to build for it, just re-run Validate afterward.
+document.getElementById('generateMazeBtn').addEventListener('click', function () {
+  if (!confirm('This replaces every wall/floor cell in the current maze with a freshly generated one. Torches, items, start, and exit stay put — Validate afterward to catch anything that landed on a wall. Continue?')) return;
+  data.cells = window.EditorGrid.generateMaze(data.width, data.height);
   rebuildAll();
 });
 

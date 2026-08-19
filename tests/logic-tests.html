@@ -165,6 +165,25 @@
   assertEqual(resized.cells.length, 3, 'resizeGrid produces newHeight rows');
   assertEqual(resized.cells[0].length, 3, 'resizeGrid produces newWidth columns');
 
+  // EditorGrid.generateMaze
+  var gm = window.EditorGrid.generateMaze(11, 9);
+  assertEqual(gm.length, 9, 'generateMaze: returns `height` rows');
+  assertTrue(gm.every(function (row) { return row.length === 11; }), 'generateMaze: every row has `width` columns');
+  assertTrue(/^[#.]+$/.test(gm.join('')), 'generateMaze: only # and . characters');
+  var borderOk = true;
+  for (var gx = 0; gx < 11; gx++) { if (gm[0][gx] !== '#' || gm[8][gx] !== '#') borderOk = false; }
+  for (var gy = 0; gy < 9; gy++) { if (gm[gy][0] !== '#' || gm[gy][10] !== '#') borderOk = false; }
+  assertTrue(borderOk, 'generateMaze: outer border is solid wall');
+
+  var gmData = { width: 11, height: 9, cells: gm, start: { x: 1, y: 1 } };
+  var gmReached = window.MazeSchema.reachableFloorSet(gmData);
+  var gmFloorCount = gm.join('').split('').filter(function (c) { return c === '.'; }).length;
+  assertEqual(Object.keys(gmReached).length, gmFloorCount,
+    'generateMaze: every floor cell is reachable from (1,1) — fully connected maze');
+
+  var gmSmall = window.EditorGrid.generateMaze(3, 3);
+  assertEqual(gmSmall, ['###', '#.#', '###'], 'generateMaze: minimum 3x3 size is just a solid box with one open center cell');
+
   document.getElementById('out').textContent = results.join('\n');
   results.forEach(function (r) { console.log(r); });
 </script>
