@@ -28,6 +28,21 @@ attribution required.
 
 - **Collect item:** `handleCoins.ogg`, `handleCoins2.ogg`
 
+### `spooky-playtime-davidkbd/`
+10 full music tracks, eerie-but-playful tone (spooky, not genuinely
+frightening — chosen to match the game's dark/creepy atmosphere while
+staying appropriate for a ~12-year-old audience). See `LICENSE.txt` in
+that folder — **CC BY 4.0, attribution to David KBD is required** if used
+(credit somewhere in the game, e.g. a credits screen or README).
+
+- **BGM strongest fits:** `Ghostly Grooves`, `Whispers of Darkness`,
+  `Labyrinth` — atmospheric/exploration-paced rather than combat-intense
+- **Higher-intensity options** (for tenser moments, if wanted later):
+  `Confronting the Nightmare`, `Shadows Fury`
+- This is the pack actually intended for the game's BGM — the earlier
+  "Dark Dungeon Ambient Music" pack considered for this slot was rejected
+  as too intense/frightening for the target age and was not vendored.
+
 ## Known gap
 
 **Torch-ignite sound effect — not sourced yet.** The best match found
