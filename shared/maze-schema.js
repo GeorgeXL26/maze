@@ -129,6 +129,45 @@ window.MazeSchema = (function () {
     return group;
   }
 
+  // Flood-fills walkable floor from `start` and returns a map of
+  // "x,y" -> true for every reachable floor cell. Shared by
+  // validateConnectivity (pass/fail summary) and the editor's overlay
+  // (needs the full reachable set to shade unreachable cells).
+  function reachableFloorSet(data) {
+    var visited = {};
+    if (!isWalkable(data, data.start.x, data.start.y)) return visited;
+    var startKey = data.start.x + ',' + data.start.y;
+    visited[startKey] = true;
+    var queue = [[data.start.x, data.start.y]];
+    var dirs = [[1, 0], [-1, 0], [0, 1], [0, -1]];
+    while (queue.length) {
+      var cur = queue.shift();
+      for (var i = 0; i < dirs.length; i++) {
+        var nx = cur[0] + dirs[i][0], ny = cur[1] + dirs[i][1];
+        var key = nx + ',' + ny;
+        if (!visited[key] && isWalkable(data, nx, ny)) {
+          visited[key] = true;
+          queue.push([nx, ny]);
+        }
+      }
+    }
+    return visited;
+  }
+
+  // Reports whether `exit` is reachable from `start`, plus the ids of any
+  // items that are not. Used by the editor's validator; unreachable items
+  // are treated as a warning, not an error, since sealed-off pockets can be
+  // an intentional part of a level design.
+  function validateConnectivity(data) {
+    var visited = reachableFloorSet(data);
+    var result = { exitReachable: false, unreachableItems: [] };
+    result.exitReachable = !!visited[data.exit.x + ',' + data.exit.y];
+    result.unreachableItems = data.items
+      .filter(function (it) { return !visited[it.x + ',' + it.y]; })
+      .map(function (it) { return it.id; });
+    return result;
+  }
+
   return {
     parseCells: parseCells,
     validateMazeData: validateMazeData,
@@ -136,6 +175,8 @@ window.MazeSchema = (function () {
     buildMazeMesh: buildMazeMesh,
     computeWallRotationY: computeWallRotationY,
     wallNeighborMask: wallNeighborMask,
-    computeWallPiece: computeWallPiece
+    computeWallPiece: computeWallPiece,
+    validateConnectivity: validateConnectivity,
+    reachableFloorSet: reachableFloorSet
   };
 })();

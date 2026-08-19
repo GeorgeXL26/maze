@@ -29,6 +29,36 @@
   assertEqual(window.MazeSchema.isWalkable(validData, 0, 0), false, 'isWalkable false on wall cell');
   assertEqual(window.MazeSchema.isWalkable(validData, 99, 0), false, 'isWalkable false out of bounds');
 
+  var connectedMaze = {
+    width: 5, height: 3, cells: ['#####', '#...#', '#####'],
+    torches: [], items: [{x:2,y:1,id:'a'}], start: {x:1,y:1}, exit: {x:3,y:1},
+    monsters: [], equipment: []
+  };
+  var connResult = window.MazeSchema.validateConnectivity(connectedMaze);
+  assertTrue(connResult.exitReachable, 'validateConnectivity: exit reachable through open corridor');
+  assertEqual(connResult.unreachableItems, [], 'validateConnectivity: no unreachable items in open corridor');
+
+  var reachable = window.MazeSchema.reachableFloorSet(connectedMaze);
+  assertEqual(Object.keys(reachable).sort(), ['1,1','2,1','3,1'], 'reachableFloorSet: returns every reachable floor cell');
+
+  var splitMaze = {
+    width: 5, height: 3, cells: ['#####', '#.#.#', '#####'],
+    torches: [], items: [{x:3,y:1,id:'sealed'}], start: {x:1,y:1}, exit: {x:3,y:1},
+    monsters: [], equipment: []
+  };
+  var splitResult = window.MazeSchema.validateConnectivity(splitMaze);
+  assertEqual(splitResult.exitReachable, false, 'validateConnectivity: exit unreachable behind a wall');
+  assertEqual(splitResult.unreachableItems, ['sealed'], 'validateConnectivity: reports unreachable item id');
+
+  var wallStartMaze = {
+    width: 3, height: 3, cells: ['###', '###', '###'],
+    torches: [], items: [{x:1,y:1,id:'x'}], start: {x:1,y:1}, exit: {x:1,y:1},
+    monsters: [], equipment: []
+  };
+  var wallStartResult = window.MazeSchema.validateConnectivity(wallStartMaze);
+  assertEqual(wallStartResult.exitReachable, false, 'validateConnectivity: start on a wall reaches nothing');
+  assertEqual(wallStartResult.unreachableItems, ['x'], 'validateConnectivity: start on a wall leaves all items unreachable');
+
   function FakeVec3() {
     this.x=0;this.y=0;this.z=0;
     this.set=function(x,y,z){this.x=x;this.y=y;this.z=z;return this;};

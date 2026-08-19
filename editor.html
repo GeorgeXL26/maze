@@ -21,6 +21,10 @@
   .palette-item .label { font-size: 11px; color: #444; }
   .palette-item:active { cursor: grabbing; }
   #toolbar button.action { padding: 8px; cursor: pointer; }
+  #validateResults { display: flex; flex-direction: column; gap: 4px; font-size: 12px; }
+  #validateResults .ok { color: #2a8a4a; }
+  #validateResults .error { color: #c0392b; }
+  #validateResults .warning { color: #b8860b; }
   #viewport { position: relative; flex: 1; }
   canvas { display: block; cursor: crosshair; }
   canvas.pan-mode { cursor: grab; }
@@ -56,6 +60,9 @@
   <hr>
   <button class="action" id="exportBtn">Export JSON</button>
   <input id="importInput" type="file" accept="application/json">
+  <hr>
+  <button class="action" id="validateBtn">Validate</button>
+  <div id="validateResults"></div>
   <hr>
   <div style="font-size:12px; color:#555;">
     Drag an icon from above onto the map to place it, or select a tool then left-click/drag to paint.<br>
@@ -151,10 +158,25 @@ function loadModel(path) {
 
 var wallTemplates, torchTemplate, coinTemplate;
 var floorMesh = null;
+var gridMesh = null;
 var wallMeshes = {}; // "x,y" -> mesh
 var torchMeshes = [];
 var itemMeshes = [];
 var startMarker, exitMarker;
+
+// Validation overlay: translucent red tiles over unreachable floor cells,
+// plus a ring around the exit marker when it can't be reached at all. Built
+// on demand by the Validate button and cleared on the next edit, since it
+// reflects a point-in-time check rather than live state.
+var validationOverlay = new THREE.Group();
+scene.add(validationOverlay);
+var exitWarningRing = null;
+
+function clearValidationOverlay() {
+  validationOverlay.clear();
+  if (exitWarningRing) { scene.remove(exitWarningRing); exitWarningRing = null; }
+  document.getElementById('validateResults').innerHTML = '';
+}
 
 function makeMarker(color) {
   var geo = new THREE.ConeGeometry(0.28, 0.5, 6);
@@ -202,6 +224,26 @@ function rebuildFloor() {
   scene.add(floorMesh);
 }
 
+// Cell-boundary grid so it is easy to see where one cell ends and the next
+// begins while editing. Lines run along every integer coordinate from
+// -0.5 to width-0.5 / height-0.5, i.e. the edges of each 1x1 cell.
+function rebuildGrid() {
+  if (gridMesh) scene.remove(gridMesh);
+  var points = [];
+  for (var x = 0; x <= data.width; x++) {
+    points.push(x - 0.5, 0, -0.5, x - 0.5, 0, data.height - 0.5);
+  }
+  for (var y = 0; y <= data.height; y++) {
+    points.push(-0.5, 0, y - 0.5, data.width - 0.5, 0, y - 0.5);
+  }
+  var geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.Float32BufferAttribute(points, 3));
+  var mat = new THREE.LineBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.18 });
+  gridMesh = new THREE.LineSegments(geo, mat);
+  gridMesh.position.y = 0.005;
+  scene.add(gridMesh);
+}
+
 function rebuildWalls() {
   Object.keys(wallMeshes).forEach(function (k) { scene.remove(wallMeshes[k]); });
   wallMeshes = {};
@@ -234,7 +276,9 @@ function rebuildMarkers() {
 }
 
 function rebuildAll() {
+  clearValidationOverlay();
   rebuildFloor();
+  rebuildGrid();
   rebuildWalls();
   rebuildMarkers();
   frameCamera();
@@ -295,6 +339,7 @@ function findEntityAt(x, y) {
 
 function moveEntity(entity, x, y) {
   if (x < 0 || y < 0 || x >= data.width || y >= data.height) return;
+  clearValidationOverlay();
   if (entity.kind === 'start') { data.start = { x: x, y: y }; startMarker.position.set(x, 0.3, y); }
   else if (entity.kind === 'exit') { data.exit = { x: x, y: y }; exitMarker.position.set(x, 0.3, y); }
   else if (entity.kind === 'torch') {
@@ -308,6 +353,7 @@ function moveEntity(entity, x, y) {
 
 function applyToolAt(x, y, tool) {
   tool = tool || currentTool;
+  clearValidationOverlay();
   window.EditorGrid.applyTool(data, tool, x, y);
   if (tool === window.EditorGrid.TOOLS.WALL || tool === window.EditorGrid.TOOLS.FLOOR) {
     refreshWallArea(x, y);
@@ -394,6 +440,80 @@ document.getElementById('exportBtn').addEventListener('click', function () {
   a.download = 'level.json';
   a.click();
   URL.revokeObjectURL(url);
+});
+
+function highlightUnreachableCells(reachable) {
+  var cells = [];
+  for (var y = 0; y < data.height; y++) {
+    for (var x = 0; x < data.width; x++) {
+      if (data.cells[y][x] === '.' && !reachable[x + ',' + y]) cells.push([x, y]);
+    }
+  }
+  if (!cells.length) return;
+  var tileGeo = new THREE.PlaneGeometry(0.92, 0.92);
+  var tileMat = new THREE.MeshBasicMaterial({ color: 0xff2222, transparent: true, opacity: 0.45, depthWrite: false });
+  var tiles = new THREE.InstancedMesh(tileGeo, tileMat, cells.length);
+  var dummy = new THREE.Object3D();
+  cells.forEach(function (cell, i) {
+    dummy.position.set(cell[0], 0.02, cell[1]);
+    dummy.rotation.set(-Math.PI / 2, 0, 0);
+    dummy.updateMatrix();
+    tiles.setMatrixAt(i, dummy.matrix);
+  });
+  tiles.instanceMatrix.needsUpdate = true;
+  validationOverlay.add(tiles);
+}
+
+function highlightUnreachableExit() {
+  var ringGeo = new THREE.RingGeometry(0.32, 0.46, 24);
+  var ringMat = new THREE.MeshBasicMaterial({ color: 0xff0000, side: THREE.DoubleSide });
+  exitWarningRing = new THREE.Mesh(ringGeo, ringMat);
+  exitWarningRing.rotation.x = -Math.PI / 2;
+  exitWarningRing.position.set(data.exit.x, 0.35, data.exit.y);
+  scene.add(exitWarningRing);
+}
+
+document.getElementById('validateBtn').addEventListener('click', function () {
+  clearValidationOverlay();
+  var out = document.getElementById('validateResults');
+  var lines = [];
+
+  var structural = window.MazeSchema.validateMazeData(data);
+  if (!structural.valid) {
+    structural.errors.forEach(function (e) { lines.push({ type: 'error', text: e }); });
+  } else {
+    if (!window.MazeSchema.isWalkable(data, data.start.x, data.start.y)) {
+      lines.push({ type: 'error', text: 'Start is not on open floor' });
+    }
+    if (!window.MazeSchema.isWalkable(data, data.exit.x, data.exit.y)) {
+      lines.push({ type: 'error', text: 'Exit is not on open floor' });
+    }
+    var conn = window.MazeSchema.validateConnectivity(data);
+    var reachable = window.MazeSchema.reachableFloorSet(data);
+    highlightUnreachableCells(reachable);
+
+    if (!conn.exitReachable) {
+      lines.push({ type: 'error', text: 'Exit is not reachable from start — ringed red on the map' });
+      highlightUnreachableExit();
+    }
+    if (conn.unreachableItems.length) {
+      lines.push({
+        type: 'warning',
+        text: conn.unreachableItems.length + ' item(s) unreachable from start — shaded red on the map: ' + conn.unreachableItems.join(', ')
+      });
+    }
+  }
+
+  if (!lines.length) {
+    lines.push({ type: 'ok', text: 'Looks good — start, exit, and all items are reachable.' });
+  }
+
+  lines.forEach(function (l) {
+    var div = document.createElement('div');
+    div.className = l.type;
+    div.textContent = (l.type === 'error' ? '✕ ' : l.type === 'warning' ? '⚠ ' : '✓ ') + l.text;
+    out.appendChild(div);
+  });
 });
 
 document.getElementById('importInput').addEventListener('change', function (e) {
