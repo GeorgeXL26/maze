@@ -253,6 +253,23 @@
   window.addEventListener('touchmove', function (e) {
     if (e.touches && e.touches[0]) setGlow(e.touches[0].clientX, e.touches[0].clientY);
   }, { passive: true });
+
+  // Looping landing-page BGM. If the browser blocks the initial autoplay
+  // attempt (no user gesture yet), retry once on the visitor's first
+  // interaction with the page.
+  var bgm = new Audio(encodeURI('assets/audio/16bit-retro-music-collection/Pixel Triumph.m4a'));
+  bgm.loop = true;
+  bgm.volume = 0.5;
+  var tryPlayBgm = function () { return bgm.play(); };
+  tryPlayBgm().catch(function () {
+    var retry = function () {
+      tryPlayBgm().catch(function () {});
+      window.removeEventListener('pointerdown', retry);
+      window.removeEventListener('keydown', retry);
+    };
+    window.addEventListener('pointerdown', retry);
+    window.addEventListener('keydown', retry);
+  });
 </script>
 </body>
 </html>
