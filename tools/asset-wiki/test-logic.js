@@ -96,10 +96,11 @@ assertEqual(animEntry.category, 'combatmelee', 'buildModelCatalog: animation cli
 var sourceTexts = scan.readSourceTexts(REPO_ROOT);
 var withStatus = scan.withStatusAndTags(modelEntries, sourceTexts, []);
 var wiredIn = withStatus.filter(function (e) { return e.status === 'wired-in'; });
-assertEqual(wiredIn.length, 10,
-  'withStatusAndTags: exactly the 10 paths currently referenced in game.html/editor.html are wired-in (investigate before continuing if this differs — game.html/editor.html were likely edited since this plan was written)');
+assertEqual(wiredIn.length, 11,
+  'withStatusAndTags: exactly the 11 paths currently referenced in game.html/editor.html are wired-in (investigate before continuing if this differs — game.html/editor.html were likely edited since this plan was written)');
 assertTrue(wiredIn.map(function (e) { return e.id; }).indexOf('wall') !== -1, 'withStatusAndTags: the wall model is wired-in');
-assertTrue(withStatus.filter(function (e) { return e.id === 'banner_red'; })[0].status === 'unused', 'withStatusAndTags: a never-referenced model (banner_red) is unused');
+assertTrue(wiredIn.map(function (e) { return e.id; }).indexOf('banner_red') !== -1, 'withStatusAndTags: banner_red is wired-in (used as the exit flag in game.html)');
+assertTrue(withStatus.filter(function (e) { return e.id === 'chest'; })[0].status === 'unused', 'withStatusAndTags: a never-referenced model (chest) is unused');
 
 // phase-tags.js: curated data sanity checks
 var phaseTags = require('./phase-tags.js');
