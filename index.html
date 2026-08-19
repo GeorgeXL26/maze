@@ -1,0 +1,258 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Torch Maze</title>
+<meta name="description" content="Fog blankets everything. Only firelight lights the way. A torch-lit maze exploration game built with three.js.">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E%F0%9F%94%A5%3C/text%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,440;9..144,560;9..144,680&family=Manrope:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --void: #0b0a08;
+    --void-deep: #060504;
+    --stone: #7d7263;
+    --torch: #ffab52;
+    --torch-hot: #ffd08a;
+    --ember: #c85a2e;
+    --parchment: #ece1c8;
+    --parchment-dim: #b8ac93;
+    --moss: #7c8f6a;
+    --mx: 50%;
+    --my: 34%;
+  }
+
+  * { box-sizing: border-box; }
+
+  html, body {
+    margin: 0;
+    height: 100%;
+    background: var(--void);
+    overflow-x: hidden;
+  }
+
+  body {
+    font-family: 'Manrope', sans-serif;
+    color: var(--parchment);
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    position: relative;
+  }
+
+  /* Layer 0: the game's own wall texture, dim and desaturated */
+  .stone-texture {
+    position: fixed;
+    inset: 0;
+    z-index: 0;
+    background-image: url('assets/kaykit-dungeon/gltf/dungeon_texture.png');
+    background-size: 260px;
+    background-repeat: repeat;
+    filter: sepia(0.55) saturate(0.6) brightness(0.42) contrast(1.05);
+    opacity: 0.9;
+  }
+
+  /* Layer 1: near-black veil with a torch-shaped hole that follows the cursor */
+  .torch-glow {
+    position: fixed;
+    inset: 0;
+    z-index: 1;
+    pointer-events: none;
+    background:
+      radial-gradient(circle 30vmax at var(--mx) var(--my),
+        rgba(255, 171, 82, 0.20) 0%,
+        rgba(11, 10, 8, 0.55) 20%,
+        rgba(11, 10, 8, 0.93) 42%,
+        var(--void-deep) 62%);
+  }
+
+  @media (prefers-reduced-motion: no-preference) {
+    .torch-glow { animation: flicker 5.5s ease-in-out infinite; }
+  }
+
+  @keyframes flicker {
+    0%, 100% { filter: brightness(1); }
+    12% { filter: brightness(0.93); }
+    24% { filter: brightness(1.06); }
+    38% { filter: brightness(0.96); }
+    52% { filter: brightness(1.04); }
+    69% { filter: brightness(0.95); }
+    83% { filter: brightness(1.03); }
+  }
+
+  main.hero {
+    position: relative;
+    z-index: 2;
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    padding: 8vh 6vw 4vh;
+  }
+
+  .eyebrow {
+    margin: 0 0 0.9rem;
+    font-family: 'Manrope', sans-serif;
+    font-weight: 700;
+    font-size: 0.78rem;
+    letter-spacing: 0.42em;
+    color: var(--torch);
+    text-transform: uppercase;
+    text-shadow: 0 0 18px rgba(255, 171, 82, 0.5);
+  }
+
+  h1.title {
+    margin: 0;
+    font-family: 'Fraunces', serif;
+    font-weight: 560;
+    font-optical-sizing: auto;
+    font-size: clamp(3.2rem, 11vw, 7rem);
+    line-height: 1;
+    letter-spacing: -0.01em;
+    color: var(--parchment);
+    text-shadow:
+      0 0 40px rgba(255, 171, 82, 0.28),
+      0 0 90px rgba(200, 90, 46, 0.18);
+  }
+
+  h1.title .accent {
+    color: var(--torch-hot);
+  }
+
+  p.tagline {
+    margin: 1.4rem 0 3.4rem;
+    font-family: 'Fraunces', serif;
+    font-weight: 440;
+    font-style: italic;
+    font-size: clamp(1rem, 2.4vw, 1.3rem);
+    color: var(--parchment-dim);
+    max-width: 34ch;
+  }
+
+  .cta-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 1.4rem;
+    justify-content: center;
+  }
+
+  .cta {
+    --glow: var(--torch);
+    display: flex;
+    align-items: center;
+    gap: 0.9rem;
+    width: 19rem;
+    max-width: 84vw;
+    padding: 1.1rem 1.4rem;
+    border-radius: 10px;
+    border: 1px solid rgba(236, 225, 200, 0.16);
+    background: linear-gradient(180deg, rgba(30, 26, 20, 0.72), rgba(14, 12, 9, 0.82));
+    text-decoration: none;
+    color: var(--parchment);
+    text-align: left;
+    transition: border-color 0.2s ease, box-shadow 0.2s ease, transform 0.2s ease, background 0.2s ease;
+  }
+
+  .cta:hover, .cta:focus-visible {
+    border-color: var(--glow);
+    box-shadow: 0 0 0 1px var(--glow), 0 0 32px -4px var(--glow);
+    transform: translateY(-2px);
+    background: linear-gradient(180deg, rgba(40, 32, 22, 0.82), rgba(16, 13, 10, 0.9));
+  }
+
+  .cta:focus-visible { outline: 2px solid var(--glow); outline-offset: 3px; }
+
+  .cta-icon {
+    font-size: 1.7rem;
+    line-height: 1;
+    filter: drop-shadow(0 0 10px var(--glow));
+  }
+
+  .cta-text { display: flex; flex-direction: column; gap: 0.15rem; }
+
+  .cta-label {
+    font-family: 'Fraunces', serif;
+    font-weight: 560;
+    font-size: 1.2rem;
+  }
+
+  .cta-sub {
+    font-size: 0.78rem;
+    letter-spacing: 0.03em;
+    color: var(--parchment-dim);
+  }
+
+  .cta-edit { --glow: var(--moss); }
+
+  footer.hint {
+    position: relative;
+    z-index: 2;
+    text-align: center;
+    padding: 0 1.5rem 2.4rem;
+    font-size: 0.8rem;
+    letter-spacing: 0.03em;
+    color: var(--parchment-dim);
+    opacity: 0.8;
+  }
+
+  footer.hint kbd {
+    font-family: 'Manrope', sans-serif;
+    font-weight: 700;
+    color: var(--torch);
+    border: 1px solid rgba(255, 171, 82, 0.4);
+    border-radius: 4px;
+    padding: 0.05em 0.4em;
+    font-size: 0.75rem;
+  }
+
+  @media (max-width: 30rem) {
+    .cta { width: 100%; }
+  }
+</style>
+</head>
+<body>
+<div class="stone-texture" aria-hidden="true"></div>
+<div class="torch-glow" aria-hidden="true"></div>
+
+<main class="hero">
+  <p class="eyebrow">Torch Maze</p>
+  <h1 class="title">Torch <span class="accent">Maze</span></h1>
+  <p class="tagline">Fog blankets everything. Only firelight lights the way.</p>
+
+  <div class="cta-row">
+    <a class="cta cta-play" href="game.html">
+      <span class="cta-icon" aria-hidden="true">🔥</span>
+      <span class="cta-text">
+        <span class="cta-label">Enter the Maze</span>
+        <span class="cta-sub">Start playing · WASD to move</span>
+      </span>
+    </a>
+    <a class="cta cta-edit" href="editor.html">
+      <span class="cta-icon" aria-hidden="true">🧱</span>
+      <span class="cta-text">
+        <span class="cta-label">Level Editor</span>
+        <span class="cta-sub">Design your own maze</span>
+      </span>
+    </a>
+  </div>
+</main>
+
+<footer class="hint">Move your mouse — light up the dark like a <kbd>torch</kbd>.</footer>
+
+<script>
+  var root = document.documentElement;
+  function setGlow(x, y) {
+    root.style.setProperty('--mx', x + 'px');
+    root.style.setProperty('--my', y + 'px');
+  }
+  window.addEventListener('mousemove', function (e) { setGlow(e.clientX, e.clientY); });
+  window.addEventListener('touchmove', function (e) {
+    if (e.touches && e.touches[0]) setGlow(e.touches[0].clientX, e.touches[0].clientY);
+  }, { passive: true });
+</script>
+</body>
+</html>

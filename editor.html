@@ -1,0 +1,541 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Torch Maze — Level Editor</title>
+<style>
+  html, body { margin: 0; height: 100%; overflow: hidden; background: #1a1a20; }
+  body { display: flex; font-family: sans-serif; }
+  #toolbar { padding: 12px; display: flex; flex-direction: column; gap: 10px; width: 190px; flex-shrink: 0; background: #f0f0f0; overflow-y: auto; }
+  .section-title { font-size: 12px; font-weight: bold; color: #888; text-transform: uppercase; letter-spacing: 0.05em; }
+  #palette { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  .palette-item {
+    display: flex; flex-direction: column; align-items: center; gap: 4px;
+    padding: 10px 4px; border-radius: 8px; border: 2px solid transparent;
+    background: #fff; cursor: grab; user-select: none;
+    box-shadow: 0 1px 2px rgba(0,0,0,0.12);
+  }
+  .palette-item:hover { background: #f7f0da; }
+  .palette-item.active { border-color: #f2a900; background: #ffedb3; }
+  .palette-item .icon { font-size: 26px; line-height: 1; }
+  .palette-item .label { font-size: 11px; color: #444; }
+  .palette-item:active { cursor: grabbing; }
+  #toolbar button.action { padding: 8px; cursor: pointer; }
+  #validateResults { display: flex; flex-direction: column; gap: 4px; font-size: 12px; }
+  #validateResults .ok { color: #2a8a4a; }
+  #validateResults .error { color: #c0392b; }
+  #validateResults .warning { color: #b8860b; }
+  #viewport { position: relative; flex: 1; }
+  canvas { display: block; cursor: crosshair; }
+  canvas.pan-mode { cursor: grab; }
+</style>
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+    "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+  }
+}
+</script>
+</head>
+<body>
+<div id="toolbar">
+  <div class="section-title">Tools</div>
+  <div id="palette">
+    <div class="palette-item active" data-tool="wall" draggable="true"><span class="icon">🧱</span><span class="label">Wall</span></div>
+    <div class="palette-item" data-tool="floor" draggable="true"><span class="icon">⬜</span><span class="label">Floor</span></div>
+    <div class="palette-item" data-tool="torch" draggable="true"><span class="icon">🔥</span><span class="label">Torch</span></div>
+    <div class="palette-item" data-tool="item" draggable="true"><span class="icon">🪙</span><span class="label">Item</span></div>
+    <div class="palette-item" data-tool="start" draggable="true"><span class="icon">🟢</span><span class="label">Start</span></div>
+    <div class="palette-item" data-tool="exit" draggable="true"><span class="icon">🔴</span><span class="label">Exit</span></div>
+    <div class="palette-item" data-tool="pan"><span class="icon">✋</span><span class="label">Pan</span></div>
+  </div>
+  <hr>
+  <div class="section-title">Grid Size (max 200x200)</div>
+  <div style="display:flex; gap:4px;">
+    <input id="widthInput" type="number" value="15" min="3" max="200" style="width:50px;">
+    <input id="heightInput" type="number" value="15" min="3" max="200" style="width:50px;">
+    <button class="action" id="resizeBtn">Resize</button>
+  </div>
+  <hr>
+  <button class="action" id="exportBtn">Export JSON</button>
+  <input id="importInput" type="file" accept="application/json">
+  <hr>
+  <button class="action" id="validateBtn">Validate</button>
+  <div id="validateResults"></div>
+  <hr>
+  <div style="font-size:12px; color:#555;">
+    Drag an icon from above onto the map to place it, or select a tool then left-click/drag to paint.<br>
+    Drag a placed torch, item, start, or exit marker to move it.<br>
+    Select "Pan" or right-click drag to pan the view; scroll to zoom.
+  </div>
+</div>
+<div id="viewport"></div>
+<script src="shared/maze-schema.js"></script>
+<script src="shared/level-io.js"></script>
+<script src="shared/editor-grid.js"></script>
+<script type="module">
+import * as THREE from 'three';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+
+var WALL_SCALE = 0.25;
+
+var data = window.LevelIO.createDefaultLevel(15, 15);
+var currentTool = window.EditorGrid.TOOLS.WALL;
+
+var viewport = document.getElementById('viewport');
+var renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setSize(viewport.clientWidth, viewport.clientHeight);
+viewport.appendChild(renderer.domElement);
+
+var scene = new THREE.Scene();
+scene.background = new THREE.Color(0x1a1a20);
+
+// True top-down orthographic view: the grid reads as an exact 2D square
+// (no perspective skew), while individual models (walls, torches, coin)
+// still render with their real 3D shading since it is a lit 3D scene.
+var camera = new THREE.OrthographicCamera(-10, 10, 10, -10, 0.1, 1000);
+camera.up.set(0, 0, -1);
+var currentHalfHeight = 10;
+
+var controls = new OrbitControls(camera, renderer.domElement);
+controls.mouseButtons = { LEFT: null, MIDDLE: THREE.MOUSE.DOLLY, RIGHT: THREE.MOUSE.PAN };
+controls.enableRotate = false;
+controls.screenSpacePanning = true;
+
+function selectTool(tool) {
+  currentTool = tool;
+  document.querySelectorAll('.palette-item').forEach(function (el) {
+    el.classList.toggle('active', el.dataset.tool === tool);
+  });
+  var isPan = tool === 'pan';
+  controls.mouseButtons.LEFT = isPan ? THREE.MOUSE.PAN : null;
+  renderer.domElement.classList.toggle('pan-mode', isPan);
+}
+
+document.querySelectorAll('.palette-item').forEach(function (el) {
+  el.addEventListener('click', function () { selectTool(el.dataset.tool); });
+  if (el.dataset.tool !== 'pan') {
+    el.addEventListener('dragstart', function (e) {
+      e.dataTransfer.setData('text/plain', el.dataset.tool);
+      e.dataTransfer.effectAllowed = 'copy';
+    });
+  }
+});
+
+function applyOrthoFrustum() {
+  var aspect = viewport.clientWidth / viewport.clientHeight;
+  camera.left = -currentHalfHeight * aspect;
+  camera.right = currentHalfHeight * aspect;
+  camera.top = currentHalfHeight;
+  camera.bottom = -currentHalfHeight;
+  camera.updateProjectionMatrix();
+}
+
+function frameCamera() {
+  var cx = (data.width - 1) / 2, cz = (data.height - 1) / 2;
+  var span = Math.max(data.width, data.height);
+  currentHalfHeight = span / 2 * 1.15; // 1.15 = margin
+  camera.position.set(cx, 50, cz);
+  camera.lookAt(cx, 0, cz);
+  camera.zoom = 1;
+  controls.target.set(cx, 0, cz);
+  applyOrthoFrustum();
+  controls.update();
+}
+
+var ambient = new THREE.AmbientLight(0xffffff, 2.2);
+scene.add(ambient);
+var dirLight = new THREE.DirectionalLight(0xffffff, 1.2);
+dirLight.position.set(5, 10, 7);
+scene.add(dirLight);
+
+var gltfLoader = new GLTFLoader();
+function loadModel(path) {
+  return gltfLoader.loadAsync(path).then(function (gltf) { return gltf.scene; });
+}
+
+var wallTemplates, torchTemplate, coinTemplate;
+var floorMesh = null;
+var gridMesh = null;
+var wallMeshes = {}; // "x,y" -> mesh
+var torchMeshes = [];
+var itemMeshes = [];
+var startMarker, exitMarker;
+
+// Validation overlay: translucent red tiles over unreachable floor cells,
+// plus a ring around the exit marker when it can't be reached at all. Built
+// on demand by the Validate button and cleared on the next edit, since it
+// reflects a point-in-time check rather than live state.
+var validationOverlay = new THREE.Group();
+scene.add(validationOverlay);
+var exitWarningRing = null;
+
+function clearValidationOverlay() {
+  validationOverlay.clear();
+  if (exitWarningRing) { scene.remove(exitWarningRing); exitWarningRing = null; }
+  document.getElementById('validateResults').innerHTML = '';
+}
+
+function makeMarker(color) {
+  var geo = new THREE.ConeGeometry(0.28, 0.5, 6);
+  var mat = new THREE.MeshStandardMaterial({ color: color });
+  var mesh = new THREE.Mesh(geo, mat);
+  mesh.position.y = 0.3;
+  return mesh;
+}
+
+function wallKey(x, y) { return x + ',' + y; }
+
+function setWallCell(x, y) {
+  if (x < 0 || y < 0 || x >= data.width || y >= data.height) return;
+  var key = wallKey(x, y);
+  var existing = wallMeshes[key];
+  if (existing) {
+    scene.remove(existing);
+    delete wallMeshes[key];
+  }
+  if (data.cells[y][x] === '#') {
+    var pieceInfo = window.MazeSchema.computeWallPiece(data, x, y);
+    var mesh = wallTemplates[pieceInfo.piece].clone();
+    mesh.position.set(x, 0, y);
+    mesh.rotation.y = pieceInfo.rotationY;
+    scene.add(mesh);
+    wallMeshes[key] = mesh;
+  }
+}
+
+function refreshWallArea(x, y) {
+  setWallCell(x, y);
+  setWallCell(x - 1, y);
+  setWallCell(x + 1, y);
+  setWallCell(x, y - 1);
+  setWallCell(x, y + 1);
+}
+
+function rebuildFloor() {
+  if (floorMesh) scene.remove(floorMesh);
+  var geo = new THREE.PlaneGeometry(data.width, data.height);
+  var mat = new THREE.MeshStandardMaterial({ color: 0x556655 });
+  floorMesh = new THREE.Mesh(geo, mat);
+  floorMesh.rotation.x = -Math.PI / 2;
+  floorMesh.position.set((data.width - 1) / 2, -0.01, (data.height - 1) / 2);
+  scene.add(floorMesh);
+}
+
+// Cell-boundary grid so it is easy to see where one cell ends and the next
+// begins while editing. Lines run along every integer coordinate from
+// -0.5 to width-0.5 / height-0.5, i.e. the edges of each 1x1 cell.
+function rebuildGrid() {
+  if (gridMesh) scene.remove(gridMesh);
+  var points = [];
+  for (var x = 0; x <= data.width; x++) {
+    points.push(x - 0.5, 0, -0.5, x - 0.5, 0, data.height - 0.5);
+  }
+  for (var y = 0; y <= data.height; y++) {
+    points.push(-0.5, 0, y - 0.5, data.width - 0.5, 0, y - 0.5);
+  }
+  var geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.Float32BufferAttribute(points, 3));
+  var mat = new THREE.LineBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.18 });
+  gridMesh = new THREE.LineSegments(geo, mat);
+  gridMesh.position.y = 0.005;
+  scene.add(gridMesh);
+}
+
+function rebuildWalls() {
+  Object.keys(wallMeshes).forEach(function (k) { scene.remove(wallMeshes[k]); });
+  wallMeshes = {};
+  for (var y = 0; y < data.height; y++) {
+    for (var x = 0; x < data.width; x++) {
+      if (data.cells[y][x] === '#') setWallCell(x, y);
+    }
+  }
+}
+
+function rebuildMarkers() {
+  torchMeshes.forEach(function (m) { scene.remove(m); });
+  torchMeshes = data.torches.map(function (t) {
+    var mesh = torchTemplate.clone();
+    mesh.position.set(t.x, 0, t.y);
+    scene.add(mesh);
+    return mesh;
+  });
+
+  itemMeshes.forEach(function (m) { scene.remove(m); });
+  itemMeshes = data.items.map(function (it) {
+    var mesh = coinTemplate.clone();
+    mesh.position.set(it.x, 0.15, it.y);
+    scene.add(mesh);
+    return mesh;
+  });
+
+  startMarker.position.set(data.start.x, 0.3, data.start.y);
+  exitMarker.position.set(data.exit.x, 0.3, data.exit.y);
+}
+
+function rebuildAll() {
+  clearValidationOverlay();
+  rebuildFloor();
+  rebuildGrid();
+  rebuildWalls();
+  rebuildMarkers();
+  frameCamera();
+}
+
+Promise.all([
+  loadModel('assets/kaykit-dungeon/gltf/wall.gltf'),
+  loadModel('assets/kaykit-dungeon/gltf/wall_corner.gltf'),
+  loadModel('assets/kaykit-dungeon/gltf/wall_Tsplit.gltf'),
+  loadModel('assets/kaykit-dungeon/gltf/wall_crossing.gltf'),
+  loadModel('assets/kaykit-dungeon/gltf/torch.gltf'),
+  loadModel('assets/kaykit-dungeon/gltf/coin.gltf')
+]).then(function (models) {
+  wallTemplates = { straight: models[0], corner: models[1], tsplit: models[2], crossing: models[3] };
+  Object.keys(wallTemplates).forEach(function (key) {
+    wallTemplates[key].scale.set(WALL_SCALE, WALL_SCALE, WALL_SCALE);
+  });
+  torchTemplate = models[4];
+  coinTemplate = models[5];
+
+  startMarker = makeMarker(0x22cc55);
+  exitMarker = makeMarker(0xcc2255);
+  scene.add(startMarker);
+  scene.add(exitMarker);
+
+  rebuildAll();
+  animate();
+});
+
+// --- Picking: raycast against the y=0 ground plane, round to nearest cell center ---
+var raycaster = new THREE.Raycaster();
+var groundPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
+
+function cellFromEvent(evt) {
+  var rect = renderer.domElement.getBoundingClientRect();
+  var ndc = new THREE.Vector2(
+    ((evt.clientX - rect.left) / rect.width) * 2 - 1,
+    -((evt.clientY - rect.top) / rect.height) * 2 + 1
+  );
+  raycaster.setFromCamera(ndc, camera);
+  var hit = new THREE.Vector3();
+  var didHit = raycaster.ray.intersectPlane(groundPlane, hit);
+  if (!didHit) return null;
+  return { x: Math.round(hit.x), y: Math.round(hit.z) };
+}
+
+function findEntityAt(x, y) {
+  if (data.start.x === x && data.start.y === y) return { kind: 'start' };
+  if (data.exit.x === x && data.exit.y === y) return { kind: 'exit' };
+  for (var i = 0; i < data.torches.length; i++) {
+    if (data.torches[i].x === x && data.torches[i].y === y) return { kind: 'torch', index: i };
+  }
+  for (var i = 0; i < data.items.length; i++) {
+    if (data.items[i].x === x && data.items[i].y === y) return { kind: 'item', index: i };
+  }
+  return null;
+}
+
+function moveEntity(entity, x, y) {
+  if (x < 0 || y < 0 || x >= data.width || y >= data.height) return;
+  clearValidationOverlay();
+  if (entity.kind === 'start') { data.start = { x: x, y: y }; startMarker.position.set(x, 0.3, y); }
+  else if (entity.kind === 'exit') { data.exit = { x: x, y: y }; exitMarker.position.set(x, 0.3, y); }
+  else if (entity.kind === 'torch') {
+    data.torches[entity.index].x = x; data.torches[entity.index].y = y;
+    torchMeshes[entity.index].position.set(x, 0, y);
+  } else if (entity.kind === 'item') {
+    data.items[entity.index].x = x; data.items[entity.index].y = y;
+    itemMeshes[entity.index].position.set(x, 0.15, y);
+  }
+}
+
+function applyToolAt(x, y, tool) {
+  tool = tool || currentTool;
+  clearValidationOverlay();
+  window.EditorGrid.applyTool(data, tool, x, y);
+  if (tool === window.EditorGrid.TOOLS.WALL || tool === window.EditorGrid.TOOLS.FLOOR) {
+    refreshWallArea(x, y);
+  } else {
+    rebuildMarkers();
+  }
+}
+
+var painting = false;
+var dragState = null;
+
+renderer.domElement.addEventListener('contextmenu', function (e) { e.preventDefault(); });
+
+renderer.domElement.addEventListener('mousedown', function (e) {
+  if (e.button !== 0 || !wallTemplates || currentTool === 'pan') return;
+  var cell = cellFromEvent(e);
+  if (!cell) return;
+  var entity = findEntityAt(cell.x, cell.y);
+  if (entity) {
+    dragState = { entity: entity, x: cell.x, y: cell.y, moved: false };
+  } else {
+    painting = true;
+    applyToolAt(cell.x, cell.y);
+  }
+});
+
+renderer.domElement.addEventListener('mousemove', function (e) {
+  if (!wallTemplates) return;
+  if (dragState) {
+    var cell = cellFromEvent(e);
+    if (cell && (cell.x !== dragState.x || cell.y !== dragState.y)) {
+      dragState.moved = true;
+      dragState.x = cell.x;
+      dragState.y = cell.y;
+      moveEntity(dragState.entity, cell.x, cell.y);
+    }
+  } else if (painting) {
+    var cell2 = cellFromEvent(e);
+    if (cell2) applyToolAt(cell2.x, cell2.y);
+  }
+});
+
+window.addEventListener('mouseup', function (e) {
+  if (e.button !== 0) return;
+  if (dragState && !dragState.moved) {
+    applyToolAt(dragState.x, dragState.y);
+  }
+  dragState = null;
+  painting = false;
+});
+
+window.addEventListener('resize', function () {
+  renderer.setSize(viewport.clientWidth, viewport.clientHeight);
+  applyOrthoFrustum();
+});
+
+renderer.domElement.addEventListener('dragover', function (e) {
+  e.preventDefault();
+  e.dataTransfer.dropEffect = 'copy';
+});
+
+renderer.domElement.addEventListener('drop', function (e) {
+  e.preventDefault();
+  if (!wallTemplates) return;
+  var tool = e.dataTransfer.getData('text/plain');
+  if (!tool) return;
+  var cell = cellFromEvent(e);
+  if (!cell) return;
+  applyToolAt(cell.x, cell.y, tool);
+});
+
+document.getElementById('resizeBtn').addEventListener('click', function () {
+  var w = parseInt(document.getElementById('widthInput').value, 10);
+  var h = parseInt(document.getElementById('heightInput').value, 10);
+  data = window.EditorGrid.resizeGrid(data, w, h);
+  rebuildAll();
+});
+
+document.getElementById('exportBtn').addEventListener('click', function () {
+  var blob = new Blob([window.LevelIO.exportLevelJSON(data)], { type: 'application/json' });
+  var url = URL.createObjectURL(blob);
+  var a = document.createElement('a');
+  a.href = url;
+  a.download = 'level.json';
+  a.click();
+  URL.revokeObjectURL(url);
+});
+
+function highlightUnreachableCells(reachable) {
+  var cells = [];
+  for (var y = 0; y < data.height; y++) {
+    for (var x = 0; x < data.width; x++) {
+      if (data.cells[y][x] === '.' && !reachable[x + ',' + y]) cells.push([x, y]);
+    }
+  }
+  if (!cells.length) return;
+  var tileGeo = new THREE.PlaneGeometry(0.92, 0.92);
+  var tileMat = new THREE.MeshBasicMaterial({ color: 0xff2222, transparent: true, opacity: 0.45, depthWrite: false });
+  var tiles = new THREE.InstancedMesh(tileGeo, tileMat, cells.length);
+  var dummy = new THREE.Object3D();
+  cells.forEach(function (cell, i) {
+    dummy.position.set(cell[0], 0.02, cell[1]);
+    dummy.rotation.set(-Math.PI / 2, 0, 0);
+    dummy.updateMatrix();
+    tiles.setMatrixAt(i, dummy.matrix);
+  });
+  tiles.instanceMatrix.needsUpdate = true;
+  validationOverlay.add(tiles);
+}
+
+function highlightUnreachableExit() {
+  var ringGeo = new THREE.RingGeometry(0.32, 0.46, 24);
+  var ringMat = new THREE.MeshBasicMaterial({ color: 0xff0000, side: THREE.DoubleSide });
+  exitWarningRing = new THREE.Mesh(ringGeo, ringMat);
+  exitWarningRing.rotation.x = -Math.PI / 2;
+  exitWarningRing.position.set(data.exit.x, 0.35, data.exit.y);
+  scene.add(exitWarningRing);
+}
+
+document.getElementById('validateBtn').addEventListener('click', function () {
+  clearValidationOverlay();
+  var out = document.getElementById('validateResults');
+  var lines = [];
+
+  var structural = window.MazeSchema.validateMazeData(data);
+  if (!structural.valid) {
+    structural.errors.forEach(function (e) { lines.push({ type: 'error', text: e }); });
+  } else {
+    if (!window.MazeSchema.isWalkable(data, data.start.x, data.start.y)) {
+      lines.push({ type: 'error', text: 'Start is not on open floor' });
+    }
+    if (!window.MazeSchema.isWalkable(data, data.exit.x, data.exit.y)) {
+      lines.push({ type: 'error', text: 'Exit is not on open floor' });
+    }
+    var conn = window.MazeSchema.validateConnectivity(data);
+    var reachable = window.MazeSchema.reachableFloorSet(data);
+    highlightUnreachableCells(reachable);
+
+    if (!conn.exitReachable) {
+      lines.push({ type: 'error', text: 'Exit is not reachable from start — ringed red on the map' });
+      highlightUnreachableExit();
+    }
+    if (conn.unreachableItems.length) {
+      lines.push({
+        type: 'warning',
+        text: conn.unreachableItems.length + ' item(s) unreachable from start — shaded red on the map: ' + conn.unreachableItems.join(', ')
+      });
+    }
+  }
+
+  if (!lines.length) {
+    lines.push({ type: 'ok', text: 'Looks good — start, exit, and all items are reachable.' });
+  }
+
+  lines.forEach(function (l) {
+    var div = document.createElement('div');
+    div.className = l.type;
+    div.textContent = (l.type === 'error' ? '✕ ' : l.type === 'warning' ? '⚠ ' : '✓ ') + l.text;
+    out.appendChild(div);
+  });
+});
+
+document.getElementById('importInput').addEventListener('change', function (e) {
+  var file = e.target.files[0];
+  if (!file) return;
+  var reader = new FileReader();
+  reader.onload = function () {
+    var result = window.LevelIO.parseLevelJSON(reader.result);
+    if (!result.ok) { alert('Import failed: ' + result.errors.join(', ')); return; }
+    data = result.data;
+    document.getElementById('widthInput').value = data.width;
+    document.getElementById('heightInput').value = data.height;
+    rebuildAll();
+  };
+  reader.readAsText(file);
+});
+
+function animate() {
+  requestAnimationFrame(animate);
+  controls.update();
+  renderer.render(scene, camera);
+}
+</script>
+</body>
+</html>

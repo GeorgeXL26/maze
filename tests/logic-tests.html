@@ -1,0 +1,172 @@
+<!DOCTYPE html>
+<html>
+<head><meta charset="utf-8"><title>Torch Maze — Logic Tests</title></head>
+<body>
+<pre id="out"></pre>
+<script src="../shared/maze-schema.js"></script>
+<script src="../shared/toon-renderer.js"></script>
+<script src="../shared/player-controller.js"></script>
+<script src="../shared/level-io.js"></script>
+<script src="../shared/editor-grid.js"></script>
+<script>
+  var results = [];
+  function assertEqual(actual, expected, label) {
+    var pass = JSON.stringify(actual) === JSON.stringify(expected);
+    results.push((pass ? 'PASS' : 'FAIL') + ' — ' + label +
+      (pass ? '' : ' (expected ' + JSON.stringify(expected) + ', got ' + JSON.stringify(actual) + ')'));
+  }
+  function assertTrue(actual, label) { assertEqual(!!actual, true, label); }
+
+  // maze-schema tests
+  var validData = {
+    width: 3, height: 2, cells: ['#.#', '...'],
+    torches: [], items: [], start: {x:1,y:0}, exit: {x:1,y:1},
+    monsters: [], equipment: []
+  };
+  assertTrue(window.MazeSchema.validateMazeData(validData).valid, 'validateMazeData accepts well-formed data');
+  assertTrue(!window.MazeSchema.validateMazeData({}).valid, 'validateMazeData rejects empty object');
+  assertTrue(window.MazeSchema.isWalkable(validData, 1, 0), 'isWalkable true on floor cell');
+  assertEqual(window.MazeSchema.isWalkable(validData, 0, 0), false, 'isWalkable false on wall cell');
+  assertEqual(window.MazeSchema.isWalkable(validData, 99, 0), false, 'isWalkable false out of bounds');
+
+  var connectedMaze = {
+    width: 5, height: 3, cells: ['#####', '#...#', '#####'],
+    torches: [], items: [{x:2,y:1,id:'a'}], start: {x:1,y:1}, exit: {x:3,y:1},
+    monsters: [], equipment: []
+  };
+  var connResult = window.MazeSchema.validateConnectivity(connectedMaze);
+  assertTrue(connResult.exitReachable, 'validateConnectivity: exit reachable through open corridor');
+  assertEqual(connResult.unreachableItems, [], 'validateConnectivity: no unreachable items in open corridor');
+
+  var reachable = window.MazeSchema.reachableFloorSet(connectedMaze);
+  assertEqual(Object.keys(reachable).sort(), ['1,1','2,1','3,1'], 'reachableFloorSet: returns every reachable floor cell');
+
+  var splitMaze = {
+    width: 5, height: 3, cells: ['#####', '#.#.#', '#####'],
+    torches: [], items: [{x:3,y:1,id:'sealed'}], start: {x:1,y:1}, exit: {x:3,y:1},
+    monsters: [], equipment: []
+  };
+  var splitResult = window.MazeSchema.validateConnectivity(splitMaze);
+  assertEqual(splitResult.exitReachable, false, 'validateConnectivity: exit unreachable behind a wall');
+  assertEqual(splitResult.unreachableItems, ['sealed'], 'validateConnectivity: reports unreachable item id');
+
+  var wallStartMaze = {
+    width: 3, height: 3, cells: ['###', '###', '###'],
+    torches: [], items: [{x:1,y:1,id:'x'}], start: {x:1,y:1}, exit: {x:1,y:1},
+    monsters: [], equipment: []
+  };
+  var wallStartResult = window.MazeSchema.validateConnectivity(wallStartMaze);
+  assertEqual(wallStartResult.exitReachable, false, 'validateConnectivity: start on a wall reaches nothing');
+  assertEqual(wallStartResult.unreachableItems, ['x'], 'validateConnectivity: start on a wall leaves all items unreachable');
+
+  function FakeVec3() {
+    this.x=0;this.y=0;this.z=0;
+    this.set=function(x,y,z){this.x=x;this.y=y;this.z=z;return this;};
+    this.copy=function(v){this.x=v.x;this.y=v.y;this.z=v.z;return this;};
+  }
+  function FakeGroup() { this.children=[]; this.add=function(o){this.children.push(o);}; }
+  function FakeMesh(geo, mat) { this.geometry=geo; this.material=mat; this.position=new FakeVec3(); this.rotation=new FakeVec3(); this.scale=new FakeVec3(); this.userData={}; }
+  var FakeTHREE = {
+    Group: FakeGroup, Mesh: FakeMesh,
+    BoxGeometry: function(){}, PlaneGeometry: function(){},
+    MeshStandardMaterial: function(){}
+  };
+
+  var maze3 = { width: 2, height: 1, cells: ['.#'] };
+  var mesh = window.MazeSchema.buildMazeMesh(maze3, FakeTHREE);
+  var walls = mesh.children.filter(function (c) { return c.userData.type === 'wall'; });
+  var floors = mesh.children.filter(function (c) { return c.userData.type === 'floor'; });
+  assertEqual(walls.length, 1, 'buildMazeMesh creates one wall mesh per # cell');
+  assertEqual(floors.length, 1, 'buildMazeMesh creates exactly one floor mesh');
+  assertEqual([walls[0].position.x, walls[0].position.z], [1, 0], 'wall mesh placed at grid (x,y) -> world (x,0,z=y)');
+
+  FakeTHREE.MeshToonMaterial = function (opts) { this.color = opts.color; this.gradientMap = opts.gradientMap; };
+  FakeTHREE.MeshBasicMaterial = function (opts) { this.color = opts.color; this.side = opts.side; };
+  FakeTHREE.DataTexture = function (data, w, h, fmt) { this.data=data; this.width=w; this.height=h; this.format=fmt; };
+  FakeTHREE.RedFormat = 'red'; FakeTHREE.NearestFilter = 'nearest'; FakeTHREE.BackSide = 'back';
+
+  var toonMat = window.ToonRenderer.createToonMaterial(0xff0000, FakeTHREE);
+  assertEqual(toonMat.color, 0xff0000, 'createToonMaterial sets color');
+  assertTrue(toonMat.gradientMap instanceof FakeTHREE.DataTexture, 'createToonMaterial attaches a gradient map');
+
+  var srcMesh = new FakeMesh({}, {});
+  srcMesh.position.set(2, 0, 3);
+  var outlineMesh = window.ToonRenderer.createOutlineMesh(srcMesh, FakeTHREE, 0.1);
+  assertEqual([outlineMesh.position.x, outlineMesh.position.z], [2, 3], 'createOutlineMesh copies source position');
+  assertEqual(outlineMesh.material.side, 'back', 'createOutlineMesh uses BackSide material');
+
+  FakeTHREE.PerspectiveCamera = function (fov, aspect) {
+    this.fov = fov; this.aspect = aspect; this.userData = {};
+    this.position = new FakeVec3();
+    this.lookAtCalls = [];
+    this.lookAt = function (x, y, z) { this.lookAtCalls.push([x, y, z]); };
+  };
+
+  var cam = window.ToonRenderer.createFollowCamera(FakeTHREE, 1.5);
+  assertEqual(cam.fov, 35, 'createFollowCamera sets fov 35');
+  window.ToonRenderer.updateFollowCamera(cam, { x: 4, y: 0, z: 6 });
+  assertEqual([cam.position.x, cam.position.y, cam.position.z], [4, 9, 15], 'updateFollowCamera offsets from target');
+  assertEqual(cam.lookAtCalls[0], [4, 0, 6], 'updateFollowCamera looks at target');
+
+  var mv = window.PlayerController.computeMove({x:0,z:0}, {forward:true,left:false,right:false,back:false}, 1, 2);
+  assertEqual(mv, {x:0,z:-2}, 'computeMove: forward moves -z at given speed');
+
+  var diag = window.PlayerController.computeMove({x:0,z:0}, {forward:true,right:true,left:false,back:false}, 1, 1);
+  assertTrue(Math.abs(diag.x - 0.707) < 0.01 && Math.abs(diag.z + 0.707) < 0.01, 'computeMove: diagonal input is normalized');
+
+  var collideMaze = { width: 3, height: 3, cells: ['###', '#.#', '###'] };
+  var blockedMove = window.PlayerController.resolveCollision({x:1,z:1}, {x:1.9,z:1}, 0.3, collideMaze);
+  assertTrue(blockedMove.x < 1.9, 'resolveCollision stops player before entering wall cell');
+
+  var openMaze = { width: 3, height: 1, cells: ['...'] };
+  var freeMove = window.PlayerController.resolveCollision({x:1,z:0}, {x:1.5,z:0}, 0.3, openMaze);
+  assertEqual(freeMove, {x:1.5,z:0}, 'resolveCollision allows movement through open floor');
+
+  var torches = [{x:2,y:2}, {x:5,y:5}];
+  assertEqual(window.PlayerController.findNearbyTorch({x:2.1,z:2.1}, torches, 0.5), 0, 'findNearbyTorch finds close torch by index');
+  assertEqual(window.PlayerController.findNearbyTorch({x:0,z:0}, torches, 0.5), -1, 'findNearbyTorch returns -1 when none in range');
+
+  var items = [{x:1,y:1,id:'gem1'}];
+  assertEqual(window.PlayerController.findNearbyItem({x:1,z:1}, items, 0.4), 0, 'findNearbyItem finds item at same cell');
+
+  assertTrue(!window.PlayerController.checkWin({x:7,z:7}, {x:7,y:7}, 1, 2, 0.5), 'checkWin false when items not all collected');
+  assertTrue(window.PlayerController.checkWin({x:7,z:7}, {x:7,y:7}, 2, 2, 0.5), 'checkWin true at exit with all items collected');
+
+  var defLevel = window.LevelIO.createDefaultLevel(5, 4);
+  assertEqual(defLevel.cells, ['#####', '#...#', '#...#', '#####'], 'createDefaultLevel builds a bordered rectangle');
+  assertEqual(defLevel.exit, {x:3,y:2}, 'createDefaultLevel places exit at bottom-right interior corner');
+
+  var roundTrip = window.LevelIO.parseLevelJSON(window.LevelIO.exportLevelJSON(defLevel));
+  assertTrue(roundTrip.ok, 'exportLevelJSON -> parseLevelJSON round-trips a valid level');
+
+  var badParse = window.LevelIO.parseLevelJSON('not json');
+  assertTrue(!badParse.ok, 'parseLevelJSON rejects invalid JSON text');
+
+  var invalidLevel = window.LevelIO.parseLevelJSON(JSON.stringify({width:1}));
+  assertTrue(!invalidLevel.ok, 'parseLevelJSON rejects JSON missing required fields');
+
+  assertEqual(window.EditorGrid.pixelToCell(105, 40, 32), {x:3,y:1}, 'pixelToCell floors pixel coords by cell size');
+
+  var edLevel = window.LevelIO.createDefaultLevel(4, 4);
+  window.EditorGrid.applyTool(edLevel, window.EditorGrid.TOOLS.WALL, 1, 1);
+  assertEqual(edLevel.cells[1], '##.#', 'applyTool WALL writes # into cells');
+  window.EditorGrid.applyTool(edLevel, window.EditorGrid.TOOLS.FLOOR, 1, 1);
+  assertEqual(edLevel.cells[1], '#..#', 'applyTool FLOOR writes . into cells');
+
+  window.EditorGrid.applyTool(edLevel, window.EditorGrid.TOOLS.TORCH, 2, 2);
+  assertEqual(edLevel.torches.length, 1, 'applyTool TORCH adds a torch');
+  window.EditorGrid.applyTool(edLevel, window.EditorGrid.TOOLS.TORCH, 2, 2);
+  assertEqual(edLevel.torches.length, 0, 'applyTool TORCH toggles off when applied again at same cell');
+
+  window.EditorGrid.applyTool(edLevel, window.EditorGrid.TOOLS.START, 2, 2);
+  assertEqual(edLevel.start, {x:2,y:2}, 'applyTool START overwrites start position');
+
+  var resized = window.EditorGrid.resizeGrid(edLevel, 3, 3);
+  assertEqual(resized.cells.length, 3, 'resizeGrid produces newHeight rows');
+  assertEqual(resized.cells[0].length, 3, 'resizeGrid produces newWidth columns');
+
+  document.getElementById('out').textContent = results.join('\n');
+  results.forEach(function (r) { console.log(r); });
+</script>
+</body>
+</html>

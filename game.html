@@ -1,0 +1,348 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Torch Maze</title>
+<style>
+  html, body { margin: 0; height: 100%; overflow: hidden; background: #000; }
+  canvas { display: block; }
+  #hud { position: fixed; top: 10px; left: 10px; color: #fff; font-family: sans-serif; text-shadow: 0 0 4px #000; }
+</style>
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+    "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+  }
+}
+</script>
+</head>
+<body>
+<div id="loader" style="position:fixed; top:10px; right:10px; color:#fff; font-family:sans-serif; text-align:right;">
+  <select id="levelSelect"></select>
+  <div style="font-size:12px; margin:4px 0 8px;">Choose a level, or load your own below</div>
+  <input id="customLevelInput" type="file" accept="application/json">
+  <div style="font-size:12px;">Choose a custom level JSON (leave empty to load the selected level)</div>
+</div>
+<div id="hud">Loading...</div>
+<script src="shared/maze-schema.js"></script>
+<script src="shared/toon-renderer.js"></script>
+<script src="shared/player-controller.js"></script>
+<script src="shared/level-io.js"></script>
+<script type="module">
+import * as THREE from 'three';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+
+var gltfLoader = new GLTFLoader();
+function loadModel(path) {
+  return gltfLoader.loadAsync(path).then(function (gltf) { return gltf.scene; });
+}
+
+async function loadManifest() {
+  var res = await fetch('levels/manifest.json');
+  return res.json();
+}
+
+async function loadLevelFile(file) {
+  var res = await fetch('levels/' + file);
+  return res.json();
+}
+
+function setupLevelSelect(manifest, selectedId) {
+  var select = document.getElementById('levelSelect');
+  manifest.forEach(function (entry) {
+    var opt = document.createElement('option');
+    opt.value = entry.id;
+    opt.textContent = entry.name;
+    if (entry.id === selectedId) opt.selected = true;
+    select.appendChild(opt);
+  });
+  select.addEventListener('change', function () {
+    window.location.search = '?level=' + encodeURIComponent(select.value);
+  });
+}
+
+function loadCustomLevel(file) {
+  return new Promise(function (resolve, reject) {
+    var reader = new FileReader();
+    reader.onload = function () {
+      var result = window.LevelIO.parseLevelJSON(reader.result);
+      if (!result.ok) reject(new Error(result.errors.join(', ')));
+      else resolve(result.data);
+    };
+    reader.readAsText(file);
+  });
+}
+
+async function startGame(mazeData) {
+  var check = window.MazeSchema.validateMazeData(mazeData);
+  if (!check.valid) { console.error('Invalid level:', check.errors); return; }
+
+  var renderer = new THREE.WebGLRenderer({ antialias: true });
+  renderer.setSize(window.innerWidth, window.innerHeight);
+  document.body.appendChild(renderer.domElement);
+
+  var scene = new THREE.Scene();
+  scene.background = new THREE.Color(0x05050a);
+
+  var camera = window.ToonRenderer.createFollowCamera(THREE, window.innerWidth / window.innerHeight);
+
+  var PLAYER_VISIBILITY_RADIUS = 2.2;
+  var TORCH_VISIBILITY_RADIUS = 3.2;
+  var FOW_SOFTNESS = 1.3;
+  var fowUniformRefs = [];
+
+  function applyFogOfWar(material) {
+    material.onBeforeCompile = function (shader) {
+      shader.uniforms.uLightCenters = { value: [] };
+      for (var i = 0; i < 8; i++) shader.uniforms.uLightCenters.value.push(new THREE.Vector4(0, 0, 0, 0));
+      shader.uniforms.uLightCount = { value: 0 };
+      shader.uniforms.uSoftness = { value: FOW_SOFTNESS };
+
+      shader.vertexShader = shader.vertexShader
+        .replace('#include <common>', '#include <common>\nvarying vec3 vFowWorldPos;')
+        .replace('#include <begin_vertex>', '#include <begin_vertex>\nvFowWorldPos = (modelMatrix * vec4(transformed, 1.0)).xyz;');
+
+      shader.fragmentShader = shader.fragmentShader
+        .replace('#include <common>', '#include <common>\nvarying vec3 vFowWorldPos;\nuniform vec4 uLightCenters[8];\nuniform int uLightCount;\nuniform float uSoftness;')
+        .replace('#include <dithering_fragment>', [
+          'float fowVis = 0.0;',
+          'for (int i = 0; i < 8; i++) {',
+          '  if (i >= uLightCount) break;',
+          '  vec4 c = uLightCenters[i];',
+          '  float d = distance(vFowWorldPos.xz, c.xz);',
+          '  float v = 1.0 - smoothstep(c.w, c.w + uSoftness, d);',
+          '  fowVis = max(fowVis, v);',
+          '}',
+          'gl_FragColor.rgb *= fowVis;',
+          '#include <dithering_fragment>'
+        ].join('\n'));
+
+      fowUniformRefs.push(shader.uniforms);
+    };
+    material.needsUpdate = true;
+  }
+
+  function collectMaterials(root) {
+    var mats = [];
+    root.traverse(function (obj) {
+      if (obj.material) {
+        if (Array.isArray(obj.material)) mats = mats.concat(obj.material);
+        else mats.push(obj.material);
+      }
+    });
+    return mats;
+  }
+
+  var WALL_SCALE = 0.25;
+  var PLAYER_SCALE = 0.41;
+  var PLAYER_FOOT_OFFSET = 0.42 * PLAYER_SCALE;
+
+  var wallTemplates = {
+    straight: await loadModel('assets/kaykit-dungeon/gltf/wall.gltf'),
+    corner: await loadModel('assets/kaykit-dungeon/gltf/wall_corner.gltf'),
+    tsplit: await loadModel('assets/kaykit-dungeon/gltf/wall_Tsplit.gltf'),
+    crossing: await loadModel('assets/kaykit-dungeon/gltf/wall_crossing.gltf')
+  };
+  Object.keys(wallTemplates).forEach(function (key) {
+    wallTemplates[key].scale.set(WALL_SCALE, WALL_SCALE, WALL_SCALE);
+  });
+  var torchUnlitTemplate = await loadModel('assets/kaykit-dungeon/gltf/torch.gltf');
+  var torchLitTemplate = await loadModel('assets/kaykit-dungeon/gltf/torch_lit.gltf');
+  var coinTemplate = await loadModel('assets/kaykit-dungeon/gltf/coin.gltf');
+  var knightTemplate = await loadModel('assets/kaykit-adventurers/characters/Knight.glb');
+  knightTemplate.scale.set(PLAYER_SCALE, PLAYER_SCALE, PLAYER_SCALE);
+
+  Object.keys(wallTemplates).map(function (k) { return wallTemplates[k]; })
+    .concat([torchUnlitTemplate, torchLitTemplate, coinTemplate, knightTemplate])
+    .forEach(function (tpl) {
+      collectMaterials(tpl).forEach(applyFogOfWar);
+    });
+
+  var idleGltf = await gltfLoader.loadAsync('assets/kaykit-adventurers/animations/Rig_Medium_General.glb');
+  var walkGltf = await gltfLoader.loadAsync('assets/kaykit-adventurers/animations/Rig_Medium_MovementBasic.glb');
+  var idleClip = idleGltf.animations.find(function (a) { return a.name === 'Idle_A'; });
+  var walkClip = walkGltf.animations.find(function (a) { return a.name === 'Walking_A'; });
+
+  var mixer = new THREE.AnimationMixer(knightTemplate);
+  var idleAction = mixer.clipAction(idleClip);
+  var walkAction = mixer.clipAction(walkClip);
+  idleAction.play();
+  var isWalking = false;
+  function setWalking(walking) {
+    if (walking === isWalking) return;
+    isWalking = walking;
+    if (walking) {
+      idleAction.fadeOut(0.15);
+      walkAction.reset().fadeIn(0.15).play();
+    } else {
+      walkAction.fadeOut(0.15);
+      idleAction.reset().fadeIn(0.15).play();
+    }
+  }
+
+  var mazeMesh = window.MazeSchema.buildMazeMesh(mazeData, THREE, wallTemplates);
+  scene.add(mazeMesh);
+  mazeMesh.children.forEach(function (c) {
+    if (c.userData.type === 'floor') applyFogOfWar(c.material);
+  });
+
+  // Safe to keep now: the fog-of-war shader mask independently zeroes
+  // everything past the visibility radius, so ambient no longer leaks
+  // visibility into unlit areas — it only affects in-range shading quality.
+  var ambient = new THREE.AmbientLight(0x778899, 1.8);
+  scene.add(ambient);
+
+  var TORCH_LIGHT_RADIUS = 1.2;
+  var torchObjects = mazeData.torches.map(function (t) {
+    var mesh = torchUnlitTemplate.clone();
+    mesh.position.set(t.x, 0, t.y);
+    scene.add(mesh);
+
+    var light = new THREE.PointLight(0xffaa44, 0, 4);
+    light.position.set(t.x, 1.0, t.y);
+    scene.add(light);
+
+    return { data: t, mesh: mesh, light: light, lit: false };
+  });
+  var lastLitTorchIndex = -1;
+
+  var ITEM_PICKUP_RADIUS = 0.5;
+  var itemMeshes = mazeData.items.map(function (it) {
+    var mesh = coinTemplate.clone();
+    mesh.position.set(it.x, 0.15, it.y);
+    scene.add(mesh);
+    return { data: it, mesh: mesh, collected: false };
+  });
+  var collectedCount = 0;
+  var gameWon = false;
+
+  var playerPos = { x: mazeData.start.x, z: mazeData.start.y };
+  window.ToonRenderer.updateFollowCamera(camera, { x: playerPos.x, y: 0, z: playerPos.z });
+
+  var playerMesh = knightTemplate;
+  playerMesh.position.set(playerPos.x, PLAYER_FOOT_OFFSET, playerPos.z);
+  scene.add(playerMesh);
+
+  var playerLight = new THREE.PointLight(0xffddaa, 10, 3.5);
+  scene.add(playerLight);
+
+  var input = { forward: false, back: false, left: false, right: false };
+  var keyMap = { KeyW: 'forward', KeyS: 'back', KeyA: 'left', KeyD: 'right' };
+  window.addEventListener('keydown', function (e) { if (keyMap[e.code]) input[keyMap[e.code]] = true; });
+  window.addEventListener('keyup', function (e) { if (keyMap[e.code]) input[keyMap[e.code]] = false; });
+
+  window.addEventListener('keydown', function (e) {
+    if (e.code === 'KeyE' && lastLitTorchIndex !== -1) {
+      var t = mazeData.torches[lastLitTorchIndex];
+      playerPos.x = t.x;
+      playerPos.z = t.y;
+    }
+  });
+
+  var clock = new THREE.Clock();
+  var PLAYER_SPEED = 2.5;
+  var PLAYER_RADIUS = 0.3;
+
+  window.addEventListener('resize', function () {
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    camera.aspect = window.innerWidth / window.innerHeight;
+    camera.updateProjectionMatrix();
+  });
+
+  document.getElementById('hud').textContent = 'Torch Maze — level loaded';
+
+  function animate() {
+    requestAnimationFrame(animate);
+    var dt = clock.getDelta();
+
+    var intended = window.PlayerController.computeMove({ x: playerPos.x, z: playerPos.z }, input, dt, PLAYER_SPEED);
+    var resolved = window.PlayerController.resolveCollision({ x: playerPos.x, z: playerPos.z }, intended, PLAYER_RADIUS, mazeData);
+    playerPos.x = resolved.x;
+    playerPos.z = resolved.z;
+
+    playerMesh.position.set(playerPos.x, PLAYER_FOOT_OFFSET, playerPos.z);
+    var moveDx = (input.right ? 1 : 0) - (input.left ? 1 : 0);
+    var moveDz = (input.back ? 1 : 0) - (input.forward ? 1 : 0);
+    if (moveDx !== 0 || moveDz !== 0) {
+      playerMesh.rotation.y = Math.atan2(moveDx, moveDz);
+    }
+    setWalking(moveDx !== 0 || moveDz !== 0);
+    mixer.update(dt);
+    window.ToonRenderer.updateFollowCamera(camera, { x: playerPos.x, y: 0, z: playerPos.z });
+    playerLight.position.set(playerPos.x, 0.6, playerPos.z);
+
+    var nearbyIdx = window.PlayerController.findNearbyTorch(
+      { x: playerPos.x, z: playerPos.z },
+      mazeData.torches,
+      TORCH_LIGHT_RADIUS
+    );
+    if (nearbyIdx !== -1 && !torchObjects[nearbyIdx].lit) {
+      var torchObj = torchObjects[nearbyIdx];
+      torchObj.lit = true;
+      torchObj.light.intensity = 15;
+      scene.remove(torchObj.mesh);
+      torchObj.mesh = torchLitTemplate.clone();
+      torchObj.mesh.position.set(torchObj.data.x, 0, torchObj.data.y);
+      scene.add(torchObj.mesh);
+      lastLitTorchIndex = nearbyIdx;
+    }
+
+    if (!gameWon) {
+      var itemIdx = window.PlayerController.findNearbyItem(
+        { x: playerPos.x, z: playerPos.z },
+        mazeData.items,
+        ITEM_PICKUP_RADIUS
+      );
+      if (itemIdx !== -1 && !itemMeshes[itemIdx].collected) {
+        itemMeshes[itemIdx].collected = true;
+        scene.remove(itemMeshes[itemIdx].mesh);
+        collectedCount++;
+      }
+
+      if (window.PlayerController.checkWin(
+        { x: playerPos.x, z: playerPos.z }, mazeData.exit,
+        collectedCount, mazeData.items.length, 0.6
+      )) {
+        gameWon = true;
+      }
+    }
+
+    document.getElementById('hud').textContent =
+      gameWon ? 'Cleared! Collected ' + collectedCount + '/' + mazeData.items.length
+              : 'Items ' + collectedCount + '/' + mazeData.items.length + ' — WASD to move, E to return to last torch';
+
+    var fowCenters = [{ x: playerPos.x, z: playerPos.z, r: PLAYER_VISIBILITY_RADIUS }];
+    torchObjects.forEach(function (t) {
+      if (t.lit) fowCenters.push({ x: t.data.x, z: t.data.y, r: TORCH_VISIBILITY_RADIUS });
+    });
+    var fowCount = Math.min(fowCenters.length, 8);
+    fowUniformRefs.forEach(function (u) {
+      for (var i = 0; i < fowCount; i++) {
+        u.uLightCenters.value[i].set(fowCenters[i].x, 0, fowCenters[i].z, fowCenters[i].r);
+      }
+      u.uLightCount.value = fowCount;
+    });
+
+    renderer.render(scene, camera);
+  }
+  animate();
+}
+
+document.getElementById('customLevelInput').addEventListener('change', function (e) {
+  var file = e.target.files[0];
+  if (!file) return;
+  loadCustomLevel(file).then(startGame).catch(function (err) {
+    alert('Failed to load level: ' + err.message);
+  });
+});
+
+loadManifest().then(function (manifest) {
+  var requestedId = new URLSearchParams(window.location.search).get('level');
+  var entry = manifest.find(function (e) { return e.id === requestedId; }) || manifest[0];
+  setupLevelSelect(manifest, entry.id);
+  return loadLevelFile(entry.file);
+}).then(startGame);
+</script>
+</body>
+</html>
