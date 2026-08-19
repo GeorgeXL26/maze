@@ -38,6 +38,28 @@ function loadModel(path) {
   return gltfLoader.loadAsync(path).then(function (gltf) { return gltf.scene; });
 }
 
+// Game-event sound cues. No native way to "play only the first N seconds"
+// of a file without re-encoding it, so durationSec (when given) just stops
+// playback via a timer instead of letting the clip finish naturally.
+var AUDIO_BASE = 'assets/audio/';
+function playClip(relPath, durationSec, onDone) {
+  var audio = new Audio(encodeURI(AUDIO_BASE + relPath));
+  audio.play().catch(function (err) {
+    // Most likely an autoplay-policy block if this ever fires before any
+    // user gesture — not fatal, just no sound that time.
+    console.warn('Audio play failed for', relPath, err);
+  });
+  if (durationSec) {
+    setTimeout(function () {
+      audio.pause();
+      if (onDone) onDone();
+    }, durationSec * 1000);
+  } else if (onDone) {
+    audio.addEventListener('ended', onDone);
+  }
+  return audio;
+}
+
 async function loadManifest() {
   var res = await fetch('levels/manifest.json');
   return res.json();
@@ -286,6 +308,7 @@ async function startGame(mazeData) {
       torchObj.mesh.position.set(torchObj.data.x, 0, torchObj.data.y);
       scene.add(torchObj.mesh);
       lastLitTorchIndex = nearbyIdx;
+      playClip('16bit-retro-music-collection/Pixel Triumph.m4a', 20);
     }
 
     if (!gameWon) {
@@ -298,6 +321,9 @@ async function startGame(mazeData) {
         itemMeshes[itemIdx].collected = true;
         scene.remove(itemMeshes[itemIdx].mesh);
         collectedCount++;
+        playClip('16bit-retro-music-collection/Pixel Heart.m4a', 5, function () {
+          playClip('kenney-rpg-audio/handleCoins.ogg');
+        });
       }
 
       if (window.PlayerController.checkWin(
@@ -305,6 +331,7 @@ async function startGame(mazeData) {
         collectedCount, mazeData.items.length, 0.6
       )) {
         gameWon = true;
+        playClip('16bit-retro-music-collection/Victory Arc.m4a');
       }
     }
 
