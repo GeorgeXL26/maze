@@ -412,8 +412,8 @@ async function startGame(mazeData) {
     }
 
     document.getElementById('hud').textContent =
-      gameWon ? 'Cleared! Collected ' + collectedCount + '/' + mazeData.items.length
-              : 'Items ' + collectedCount + '/' + mazeData.items.length + ' — WASD to move, E to return to last torch';
+      gameWon ? 'Cleared! Collected ' + collectedCount + '/' + mazeData.items.length + ' coins'
+              : 'Coins ' + collectedCount + '/' + mazeData.items.length + ' — WASD to move, E to return to last torch';
 
     var fowCenters = [{ x: playerPos.x, z: playerPos.z, r: PLAYER_VISIBILITY_RADIUS }];
     torchObjects.forEach(function (t) {

@@ -45,7 +45,7 @@
     <div class="palette-item active" data-tool="wall" draggable="true"><span class="icon">🧱</span><span class="label">Wall</span></div>
     <div class="palette-item" data-tool="floor" draggable="true"><span class="icon">⬜</span><span class="label">Floor</span></div>
     <div class="palette-item" data-tool="torch" draggable="true"><span class="icon">🔥</span><span class="label">Torch</span></div>
-    <div class="palette-item" data-tool="item" draggable="true"><span class="icon">🪙</span><span class="label">Item</span></div>
+    <div class="palette-item" data-tool="item" draggable="true"><span class="icon">🪙</span><span class="label">Coin</span></div>
     <div class="palette-item" data-tool="start" draggable="true"><span class="icon">🟢</span><span class="label">Start</span></div>
     <div class="palette-item" data-tool="exit" draggable="true"><span class="icon">🔴</span><span class="label">Exit</span></div>
     <div class="palette-item" data-tool="pan"><span class="icon">✋</span><span class="label">Pan</span></div>
@@ -67,9 +67,9 @@
   <hr>
   <div style="font-size:12px; color:#555;">
     Drag an icon from above onto the map to place it, or select a tool then left-click/drag to paint.<br>
-    Drag a placed torch, item, start, or exit marker to move it.<br>
+    Drag a placed torch, coin, start, or exit marker to move it.<br>
     Select "Pan" or right-click drag to pan the view; scroll to zoom.<br>
-    "Generate Maze" replaces the walls only — re-place torches/items/start/exit and Validate afterward.
+    "Generate Maze" replaces the walls only — re-place torches/coins/start/exit and Validate afterward.
   </div>
 </div>
 <div id="viewport"></div>
@@ -440,7 +440,7 @@ document.getElementById('resizeBtn').addEventListener('click', function () {
 // surfaces exactly that (start/exit-not-on-floor, unreachable items) so
 // there's nothing new to build for it, just re-run Validate afterward.
 document.getElementById('generateMazeBtn').addEventListener('click', function () {
-  if (!confirm('This replaces every wall/floor cell in the current maze with a freshly generated one. Torches, items, start, and exit stay put — Validate afterward to catch anything that landed on a wall. Continue?')) return;
+  if (!confirm('This replaces every wall/floor cell in the current maze with a freshly generated one. Torches, coins, start, and exit stay put — Validate afterward to catch anything that landed on a wall. Continue?')) return;
   data.cells = window.EditorGrid.generateMaze(data.width, data.height);
   rebuildAll();
 });
@@ -512,13 +512,13 @@ document.getElementById('validateBtn').addEventListener('click', function () {
     if (conn.unreachableItems.length) {
       lines.push({
         type: 'warning',
-        text: conn.unreachableItems.length + ' item(s) unreachable from start — shaded red on the map: ' + conn.unreachableItems.join(', ')
+        text: conn.unreachableItems.length + ' coin(s) unreachable from start — shaded red on the map: ' + conn.unreachableItems.join(', ')
       });
     }
   }
 
   if (!lines.length) {
-    lines.push({ type: 'ok', text: 'Looks good — start, exit, and all items are reachable.' });
+    lines.push({ type: 'ok', text: 'Looks good — start, exit, and all coins are reachable.' });
   }
 
   lines.forEach(function (l) {
