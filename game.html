@@ -246,8 +246,20 @@ async function startGame(mazeData) {
   var knightTemplate = await loadModel('assets/kaykit-adventurers/characters/Knight.glb');
   knightTemplate.scale.set(PLAYER_SCALE, PLAYER_SCALE, PLAYER_SCALE);
 
+  // Weapon pickups — visual only, per the design: walking over one just
+  // swaps what the player model is shown holding, no gameplay effect.
+  var WEAPON_TEMPLATES = {
+    axe: await loadModel('assets/kaykit-adventurers/assets/axe_1handed.gltf'),
+    sword: await loadModel('assets/kaykit-adventurers/assets/sword_1handed.gltf'),
+    bow: await loadModel('assets/kaykit-adventurers/assets/bow_withString.gltf'),
+    arrow: await loadModel('assets/kaykit-adventurers/assets/arrow_bow.gltf')
+  };
+  var ITEM_TEMPLATES = { gem: coinTemplate };
+  Object.keys(WEAPON_TEMPLATES).forEach(function (key) { ITEM_TEMPLATES[key] = WEAPON_TEMPLATES[key]; });
+
   Object.keys(wallTemplates).map(function (k) { return wallTemplates[k]; })
     .concat([torchUnlitTemplate, torchLitTemplate, coinTemplate, exitFlagTemplate, knightTemplate])
+    .concat(Object.keys(WEAPON_TEMPLATES).map(function (k) { return WEAPON_TEMPLATES[k]; }))
     .forEach(function (tpl) {
       collectMaterials(tpl).forEach(applyFogOfWar);
     });
@@ -308,13 +320,37 @@ async function startGame(mazeData) {
 
   var ITEM_PICKUP_RADIUS = 0.5;
   var itemMeshes = mazeData.items.map(function (it) {
-    var mesh = coinTemplate.clone();
-    mesh.position.set(it.x, 0.15, it.y);
+    var template = ITEM_TEMPLATES[it.type] || coinTemplate;
+    var mesh = template.clone();
+    mesh.position.set(it.x, it.type === 'gem' || !it.type ? 0.15 : 0, it.y);
     scene.add(mesh);
     return { data: it, mesh: mesh, collected: false };
   });
+  // Stars/HUD only ever counted coins ("gem" items) — weapon pickups are
+  // visual-only and don't gate anything, so they're tracked separately
+  // from collectedCount/coinTotal below rather than lumped into
+  // mazeData.items.length like before.
+  var coinTotal = mazeData.items.filter(function (it) { return it.type === 'gem' || !it.type; }).length;
   var collectedCount = 0;
   var gameWon = false;
+
+  // Currently-held weapon: a simple child of playerMesh at a fixed offset
+  // approximating a hand position — not bone-parented to the rig, so it
+  // rides along with position/rotation but won't track individual hand
+  // animation. One slot: picking up a new weapon replaces whatever was
+  // held before.
+  var HELD_WEAPON_SCALE = 0.45;
+  var heldWeaponMesh = null;
+  function equipWeapon(type) {
+    if (heldWeaponMesh) { playerMesh.remove(heldWeaponMesh); heldWeaponMesh = null; }
+    var template = WEAPON_TEMPLATES[type];
+    if (!template) return;
+    heldWeaponMesh = template.clone();
+    heldWeaponMesh.scale.set(HELD_WEAPON_SCALE, HELD_WEAPON_SCALE, HELD_WEAPON_SCALE);
+    heldWeaponMesh.position.set(0.22, 0.55, 0.05);
+    heldWeaponMesh.rotation.set(0, 0, Math.PI * 0.15);
+    playerMesh.add(heldWeaponMesh);
+  }
 
   var playerPos = { x: mazeData.start.x, z: mazeData.start.y };
   window.ToonRenderer.updateFollowCamera(camera, { x: playerPos.x, y: 0, z: playerPos.z });
@@ -399,10 +435,16 @@ async function startGame(mazeData) {
       if (itemIdx !== -1 && !itemMeshes[itemIdx].collected) {
         itemMeshes[itemIdx].collected = true;
         scene.remove(itemMeshes[itemIdx].mesh);
-        collectedCount++;
-        playClip('kenney-music-jingles/Pizzicato jingles/jingles_PIZZI01.ogg', null, function () {
-          playClip('kenney-rpg-audio/handleCoins.ogg');
-        });
+        var pickedType = itemMeshes[itemIdx].data.type;
+        if (pickedType === 'gem' || !pickedType) {
+          collectedCount++;
+          playClip('kenney-music-jingles/Pizzicato jingles/jingles_PIZZI01.ogg', null, function () {
+            playClip('kenney-rpg-audio/handleCoins.ogg');
+          });
+        } else {
+          equipWeapon(pickedType);
+          playClip('kenney-music-jingles/Pizzicato jingles/jingles_PIZZI01.ogg');
+        }
       }
 
       // Winning only requires reaching the exit — the "all items"/"all
@@ -417,16 +459,16 @@ async function startGame(mazeData) {
 
         var torchesLitCount = torchObjects.filter(function (t) { return t.lit; }).length;
         var stars = 1; // reaching the exit always earns the first star
-        if (collectedCount >= mazeData.items.length) stars++;
+        if (collectedCount >= coinTotal) stars++;
         if (torchesLitCount >= torchObjects.length) stars++;
         var elapsedSec = Math.round((performance.now() - levelStartTime) / 1000);
-        showWinModal(stars, elapsedSec, collectedCount, mazeData.items.length, torchesLitCount, torchObjects.length);
+        showWinModal(stars, elapsedSec, collectedCount, coinTotal, torchesLitCount, torchObjects.length);
       }
     }
 
     document.getElementById('hud').textContent =
-      gameWon ? 'Cleared! Collected ' + collectedCount + '/' + mazeData.items.length + ' coins'
-              : 'Coins ' + collectedCount + '/' + mazeData.items.length + ' — WASD to move, E to return to last torch';
+      gameWon ? 'Cleared! Collected ' + collectedCount + '/' + coinTotal + ' coins'
+              : 'Coins ' + collectedCount + '/' + coinTotal + ' — WASD to move, E to return to last torch';
 
     var fowCenters = [{ x: playerPos.x, z: playerPos.z, r: PLAYER_VISIBILITY_RADIUS }];
     torchObjects.forEach(function (t) {

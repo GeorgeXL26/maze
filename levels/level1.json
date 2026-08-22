@@ -173,6 +173,30 @@
             "y": 23,
             "id": "item-18-23",
             "type": "gem"
+        },
+        {
+            "x": 17,
+            "y": 9,
+            "id": "axe-17-9",
+            "type": "axe"
+        },
+        {
+            "x": 14,
+            "y": 26,
+            "id": "sword-14-26",
+            "type": "sword"
+        },
+        {
+            "x": 6,
+            "y": 3,
+            "id": "bow-6-3",
+            "type": "bow"
+        },
+        {
+            "x": 14,
+            "y": 9,
+            "id": "arrow-14-9",
+            "type": "arrow"
         }
     ],
     "start": {

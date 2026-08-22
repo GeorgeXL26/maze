@@ -61,6 +61,11 @@ function pickRandomDistinct(pool, count, exclude) {
   return picked;
 }
 
+// Visual-only weapon pickups — one of each per level, same everywhere
+// regardless of tier (they're flavor, not part of the coin/star scoring,
+// so they don't need to scale with area the way coins/torches do).
+var WEAPON_TYPES = ['axe', 'sword', 'bow', 'arrow'];
+
 function generateLevel(tier) {
   var size = tier.size;
   var cells = EditorGrid.generateMaze(size, size);
@@ -70,14 +75,20 @@ function generateLevel(tier) {
 
   var floors = floorCells(cells);
   var torchCells = pickRandomDistinct(floors, tier.torches, [start, exit]);
-  var itemCells = pickRandomDistinct(floors, tier.items, [start, exit].concat(torchCells));
+  var coinCells = pickRandomDistinct(floors, tier.items, [start, exit].concat(torchCells));
+  var weaponCells = pickRandomDistinct(floors, WEAPON_TYPES.length, [start, exit].concat(torchCells).concat(coinCells));
+
+  var items = coinCells.map(function (c) {
+    return { x: c[0], y: c[1], id: 'item-' + c[0] + '-' + c[1], type: 'gem' };
+  }).concat(weaponCells.map(function (c, i) {
+    var type = WEAPON_TYPES[i];
+    return { x: c[0], y: c[1], id: type + '-' + c[0] + '-' + c[1], type: type };
+  }));
 
   return {
     width: size, height: size, cells: cells,
     torches: torchCells.map(function (c) { return { x: c[0], y: c[1] }; }),
-    items: itemCells.map(function (c) {
-      return { x: c[0], y: c[1], id: 'item-' + c[0] + '-' + c[1], type: 'gem' };
-    }),
+    items: items,
     start: { x: start[0], y: start[1] },
     exit: { x: exit[0], y: exit[1] },
     monsters: [], equipment: []
@@ -107,7 +118,7 @@ TIERS.forEach(function (tier) {
     var level = generateLevel(tier);
     fs.writeFileSync(path.join(LEVELS_DIR, file), JSON.stringify(level, null, 2));
     manifest.push({ id: id, name: tier.label + ' ' + i, file: file, difficulty: tier.key });
-    console.log('Wrote ' + file + ' (' + level.torches.length + ' torches, ' + level.items.length + ' coins)');
+    console.log('Wrote ' + file + ' (' + level.torches.length + ' torches, ' + tier.items + ' coins, ' + WEAPON_TYPES.length + ' weapons)');
   }
 });
 
