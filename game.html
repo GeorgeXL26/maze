@@ -60,15 +60,18 @@
   #charSelectPanel h2 { margin: 0 0 20px; font-size: 20px; font-weight: 700; }
   #charSelectGrid { display: flex; gap: 12px; }
   .char-card {
-    width: 110px; background: linear-gradient(180deg, rgba(40,32,22,0.7), rgba(16,13,10,0.85));
-    border: 2px solid rgba(236,225,200,0.16); border-radius: 8px; padding: 14px 8px;
+    width: 140px; background: linear-gradient(180deg, rgba(40,32,22,0.7), rgba(16,13,10,0.85));
+    border: 2px solid rgba(236,225,200,0.16); border-radius: 8px; padding: 10px;
     cursor: pointer; color: #ece1c8; font-family: inherit;
     transition: border-color 0.15s ease, box-shadow 0.15s ease, transform 0.15s ease;
   }
   .char-card:hover {
     border-color: #ffab52; box-shadow: 0 0 16px -2px #ffab52; transform: translateY(-2px);
   }
-  .char-card .char-icon { font-size: 30px; display: block; margin-bottom: 8px; }
+  .char-card .char-portrait {
+    width: 100%; aspect-ratio: 1 / 1; object-fit: contain; display: block;
+    background: #14141a; border-radius: 6px; margin-bottom: 8px;
+  }
   .char-card .char-name { font-size: 13px; font-weight: 600; }
 </style>
 <script type="importmap">
@@ -84,7 +87,7 @@
 <button id="quitBtn" type="button">← Quit</button>
 <div id="hud">Loading...</div>
 
-<div id="charSelectModal">
+<div id="charSelectModal" class="hidden">
   <div id="charSelectPanel">
     <h2>Choose your hero</h2>
     <div id="charSelectGrid"></div>
@@ -125,20 +128,74 @@ var CHARACTERS = [
   { id: 'rogue', label: 'Rogue', icon: '🗡️', path: 'assets/kaykit-adventurers/characters/Rogue.glb' }
 ];
 
+// Renders a small preview image of each hero — same live-render-a-snapshot
+// approach as the asset wiki's thumbnails (tools/asset-wiki/app.js), just
+// inline here since this is a one-time render of 5 known models rather
+// than an on-demand catalog.
+var THUMB_SIZE = 160;
+function renderCharacterThumbnails() {
+  var renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, preserveDrawingBuffer: true });
+  renderer.setSize(THUMB_SIZE, THUMB_SIZE);
+  var scene = new THREE.Scene();
+  var camera = new THREE.PerspectiveCamera(35, 1, 0.05, 500);
+  scene.add(new THREE.AmbientLight(0xffffff, 2.0));
+  var dirLight = new THREE.DirectionalLight(0xffffff, 1.6);
+  dirLight.position.set(3, 5, 4);
+  scene.add(dirLight);
+
+  function frame(obj) {
+    var box = new THREE.Box3().setFromObject(obj);
+    var center = box.getCenter(new THREE.Vector3());
+    var sphere = box.getBoundingSphere(new THREE.Sphere());
+    var radius = Math.max(sphere.radius, 0.05);
+    var dir = new THREE.Vector3(0, 0.15, 1).normalize();
+    // Distance needed for the whole bounding sphere to fit inside the
+    // camera's vertical FOV, not an arbitrary multiple of the radius —
+    // these are T-posed characters with arms spread wide, so the sphere is
+    // much bigger than a compact prop and a flat "radius * 2.3" (which
+    // worked fine for asset-wiki's prop thumbnails) cropped heads and
+    // hands here. 15% padding beyond the bare minimum.
+    var halfFovRad = (camera.fov / 2) * (Math.PI / 180);
+    var distance = (radius / Math.sin(halfFovRad)) * 1.15;
+    camera.position.copy(center).addScaledVector(dir, distance);
+    camera.near = distance * 0.05;
+    camera.far = distance * 10;
+    camera.updateProjectionMatrix();
+    camera.lookAt(center);
+  }
+
+  // Keeps the loaded model on each entry (c.model), not just the
+  // snapshot — startGame() reuses it directly instead of fetching and
+  // re-parsing the same GLB a second time for the chosen hero.
+  return Promise.all(CHARACTERS.map(function (c) {
+    return loadModel(c.path).then(function (model) {
+      scene.add(model);
+      frame(model);
+      renderer.render(scene, camera);
+      c.thumbnail = renderer.domElement.toDataURL('image/png');
+      c.model = model;
+      scene.remove(model);
+    });
+  }));
+}
+
 function selectCharacter() {
   var modal = document.getElementById('charSelectModal');
   var grid = document.getElementById('charSelectGrid');
-  return new Promise(function (resolve) {
-    CHARACTERS.forEach(function (c) {
-      var card = document.createElement('button');
-      card.type = 'button';
-      card.className = 'char-card';
-      card.innerHTML = '<span class="char-icon">' + c.icon + '</span><span class="char-name">' + c.label + '</span>';
-      card.addEventListener('click', function () {
-        modal.classList.add('hidden');
-        resolve(c.path);
+  return renderCharacterThumbnails().then(function () {
+    return new Promise(function (resolve) {
+      CHARACTERS.forEach(function (c) {
+        var card = document.createElement('button');
+        card.type = 'button';
+        card.className = 'char-card';
+        card.innerHTML = '<img class="char-portrait" src="' + c.thumbnail + '" alt="' + c.label + '"><span class="char-name">' + c.label + '</span>';
+        card.addEventListener('click', function () {
+          modal.classList.add('hidden');
+          resolve(c.model);
+        });
+        grid.appendChild(card);
       });
-      grid.appendChild(card);
+      modal.classList.remove('hidden');
     });
   });
 }
@@ -212,7 +269,7 @@ function loadCustomLevelFromStorage() {
   return result.ok ? result.data : null;
 }
 
-async function startGame(mazeData, characterPath) {
+async function startGame(mazeData, characterModel) {
   var check = window.MazeSchema.validateMazeData(mazeData);
   if (!check.valid) { console.error('Invalid level:', check.errors); return; }
 
@@ -291,9 +348,11 @@ async function startGame(mazeData, characterPath) {
   var exitFlagTemplate = await loadModel('assets/kaykit-dungeon/gltf/banner_red.gltf');
   // Still named knightTemplate for minimal diff against the rest of this
   // function — it's actually whichever hero was chosen on the character
-  // select screen (falls back to the Knight if none was passed in, e.g.
-  // startGame() called directly).
-  var knightTemplate = await loadModel(characterPath || 'assets/kaykit-adventurers/characters/Knight.glb');
+  // select screen. selectCharacter() already loaded it once for the
+  // thumbnail, so this reuses that model directly instead of fetching and
+  // re-parsing the same GLB again; falls back to loading the Knight fresh
+  // if none was passed in (e.g. startGame() called directly).
+  var knightTemplate = characterModel || await loadModel('assets/kaykit-adventurers/characters/Knight.glb');
   knightTemplate.scale.set(PLAYER_SCALE, PLAYER_SCALE, PLAYER_SCALE);
 
   Object.keys(wallTemplates).map(function (k) { return wallTemplates[k]; })
