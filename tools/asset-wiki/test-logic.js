@@ -96,8 +96,8 @@ assertEqual(animEntry.category, 'combatmelee', 'buildModelCatalog: animation cli
 var sourceTexts = scan.readSourceTexts(REPO_ROOT);
 var withStatus = scan.withStatusAndTags(modelEntries, sourceTexts, []);
 var wiredIn = withStatus.filter(function (e) { return e.status === 'wired-in'; });
-assertEqual(wiredIn.length, 15,
-  'withStatusAndTags: exactly the 15 paths currently referenced in game.html/editor.html are wired-in (investigate before continuing if this differs — game.html/editor.html were likely edited since this plan was written)');
+assertEqual(wiredIn.length, 22,
+  'withStatusAndTags: exactly the 22 paths currently referenced in game.html/editor.html are wired-in (investigate before continuing if this differs — game.html/editor.html were likely edited since this plan was written)');
 assertTrue(wiredIn.map(function (e) { return e.id; }).indexOf('wall') !== -1, 'withStatusAndTags: the wall model is wired-in');
 assertTrue(wiredIn.map(function (e) { return e.id; }).indexOf('banner_red') !== -1, 'withStatusAndTags: banner_red is wired-in (used as the exit flag in game.html)');
 ['Knight', 'Barbarian', 'Mage', 'Ranger', 'Rogue'].forEach(function (id) {

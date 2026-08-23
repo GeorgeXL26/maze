@@ -47,6 +47,27 @@
     padding: 8px 20px; cursor: pointer; font-size: 13px;
   }
 
+  #abilityIcon {
+    position: fixed; bottom: 16px; left: 16px; z-index: 5;
+    width: 52px; height: 52px; border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 24px; font-family: 'Manrope', sans-serif;
+    background: linear-gradient(180deg, rgba(30,26,20,0.85), rgba(14,12,9,0.9));
+    border: 2px solid rgba(236,225,200,0.22);
+    opacity: 0.4; transition: opacity 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
+  }
+  #abilityIcon.hidden { display: none; }
+  #abilityIcon.ready {
+    opacity: 1; border-color: #ffab52; box-shadow: 0 0 16px -2px #ffab52;
+  }
+  #abilityIcon.active {
+    opacity: 1; border-color: #7cc47c; box-shadow: 0 0 16px -2px #7cc47c;
+  }
+  #abilityCooldownText {
+    position: absolute; bottom: -18px; left: 50%; transform: translateX(-50%);
+    font-size: 11px; color: #b8ac93; white-space: nowrap;
+  }
+
   #charSelectModal {
     position: fixed; inset: 0; background: rgba(0,0,0,0.85);
     display: flex; align-items: center; justify-content: center; z-index: 15;
@@ -60,7 +81,7 @@
   #charSelectPanel h2 { margin: 0 0 20px; font-size: 20px; font-weight: 700; }
   #charSelectGrid { display: flex; gap: 12px; }
   .char-card {
-    width: 140px; background: linear-gradient(180deg, rgba(40,32,22,0.7), rgba(16,13,10,0.85));
+    width: 170px; background: linear-gradient(180deg, rgba(40,32,22,0.7), rgba(16,13,10,0.85));
     border: 2px solid rgba(236,225,200,0.16); border-radius: 8px; padding: 10px;
     cursor: pointer; color: #ece1c8; font-family: inherit;
     transition: border-color 0.15s ease, box-shadow 0.15s ease, transform 0.15s ease;
@@ -69,10 +90,11 @@
     border-color: #ffab52; box-shadow: 0 0 16px -2px #ffab52; transform: translateY(-2px);
   }
   .char-card .char-portrait {
-    width: 100%; aspect-ratio: 1 / 1; object-fit: contain; display: block;
+    width: 100%; aspect-ratio: 3 / 4; object-fit: contain; display: block;
     background: #14141a; border-radius: 6px; margin-bottom: 8px;
   }
   .char-card .char-name { font-size: 13px; font-weight: 600; }
+  .char-card .char-power { font-size: 10.5px; color: #b8ac93; margin-top: 3px; line-height: 1.4; }
 </style>
 <script type="importmap">
 {
@@ -86,6 +108,11 @@
 <body>
 <button id="quitBtn" type="button">← Quit</button>
 <div id="hud">Loading...</div>
+
+<div id="abilityIcon" class="hidden">
+  <span id="abilityIconGlyph"></span>
+  <span id="abilityCooldownText"></span>
+</div>
 
 <div id="charSelectModal" class="hidden">
   <div id="charSelectPanel">
@@ -116,77 +143,211 @@ var gltfLoader = new GLTFLoader();
 function loadModel(path) {
   return gltfLoader.loadAsync(path).then(function (gltf) { return gltf.scene; });
 }
+// Same GLB can be needed more than once (e.g. the Rogue's two daggers are
+// the same file, or a weapon happens to double as a thumbnail-phase and
+// gameplay-phase load) — cache the load, callers .clone() the result.
+var modelCache = {};
+function loadModelCached(path) {
+  if (!modelCache[path]) modelCache[path] = loadModel(path);
+  return modelCache[path];
+}
+
+// Each hero permanently wields their signature gear — not a pickup, always
+// equipped. hand: 'left' | 'right' picks which side of the fixed hand
+// offset (see attachWeapons) a piece mounts on; a class can list more than
+// one piece (Knight's sword + shield, Rogue's two daggers).
+var CLASS_WEAPONS = {
+  knight: [
+    { path: 'assets/kaykit-adventurers/assets/sword_1handed.gltf', hand: 'right' },
+    { path: 'assets/kaykit-adventurers/assets/shield_round.gltf', hand: 'left' }
+  ],
+  barbarian: [
+    { path: 'assets/kaykit-adventurers/assets/axe_1handed.gltf', hand: 'right' }
+  ],
+  mage: [
+    { path: 'assets/kaykit-adventurers/assets/wand.gltf', hand: 'right' }
+  ],
+  ranger: [
+    { path: 'assets/kaykit-adventurers/assets/bow_withString.gltf', hand: 'left' },
+    { path: 'assets/kaykit-adventurers/assets/arrow_bow.gltf', hand: 'right' }
+  ],
+  rogue: [
+    { path: 'assets/kaykit-adventurers/assets/dagger.gltf', hand: 'right' },
+    { path: 'assets/kaykit-adventurers/assets/dagger.gltf', hand: 'left' }
+  ]
+};
+
+// Fixed offsets approximating hand position — not bone-parented to the
+// rig (same simplification the earlier weapon-pickup feature used), so
+// gear rides along with the character's position/rotation but doesn't
+// track individual arm-swing animation.
+var WEAPON_SCALE = 0.45;
+function attachWeapons(parentMesh, weaponDefs) {
+  return Promise.all(weaponDefs.map(function (def) {
+    return loadModelCached(def.path).then(function (loaded) {
+      var mesh = loaded.clone();
+      mesh.scale.set(WEAPON_SCALE, WEAPON_SCALE, WEAPON_SCALE);
+      var xOff = def.hand === 'left' ? -0.22 : 0.22;
+      mesh.position.set(xOff, 0.55, 0.05);
+      mesh.rotation.set(0, 0, def.hand === 'left' ? -Math.PI * 0.15 : Math.PI * 0.15);
+      parentMesh.add(mesh);
+    });
+  }));
+}
 
 // Character select — shown once per level load, before the maze itself
 // starts. All 5 are kaykit-adventurers models sharing the same rig, so the
 // existing Rig_Medium idle/walk clips apply to whichever one is picked.
+// ability.kind: 'instant' (jump, ranger-shot — one-shot effect, no active
+// window) or 'duration' (sprint/seeing-beyond/invisible — stays active for
+// durationMs, tracked per-frame in the game loop).
 var CHARACTERS = [
-  { id: 'knight', label: 'Knight', icon: '🛡️', path: 'assets/kaykit-adventurers/characters/Knight.glb' },
-  { id: 'barbarian', label: 'Barbarian', icon: '🪓', path: 'assets/kaykit-adventurers/characters/Barbarian.glb' },
-  { id: 'mage', label: 'Mage', icon: '🔮', path: 'assets/kaykit-adventurers/characters/Mage.glb' },
-  { id: 'ranger', label: 'Ranger', icon: '🏹', path: 'assets/kaykit-adventurers/characters/Ranger.glb' },
-  { id: 'rogue', label: 'Rogue', icon: '🗡️', path: 'assets/kaykit-adventurers/characters/Rogue.glb' }
+  {
+    id: 'knight', label: 'Knight', path: 'assets/kaykit-adventurers/characters/Knight.glb',
+    power: 'Sprint — 2x speed for 5s', ability: { kind: 'duration', name: 'sprint', glyph: '💨', cooldownMs: 10000, durationMs: 5000 }
+  },
+  {
+    id: 'barbarian', label: 'Barbarian', path: 'assets/kaykit-adventurers/characters/Barbarian.glb',
+    power: 'Jump — leap over a wall', ability: { kind: 'instant', name: 'jump', glyph: '⬆️', cooldownMs: 10000 }
+  },
+  {
+    id: 'mage', label: 'Mage', path: 'assets/kaykit-adventurers/characters/Mage.glb',
+    power: 'Seeing Beyond — 2x sight for 5s', ability: { kind: 'duration', name: 'seeing-beyond', glyph: '👁️', cooldownMs: 15000, durationMs: 5000 }
+  },
+  {
+    id: 'ranger', label: 'Ranger', path: 'assets/kaykit-adventurers/characters/Ranger.glb',
+    power: 'Shot — light/collect through walls', ability: { kind: 'instant', name: 'ranger-shot', glyph: '🎯', cooldownMs: 10000 }
+  },
+  {
+    id: 'rogue', label: 'Rogue', path: 'assets/kaykit-adventurers/characters/Rogue.glb',
+    power: 'Invisible — unseen for 5s', ability: { kind: 'duration', name: 'invisible', glyph: '👻', cooldownMs: 15000, durationMs: 5000 }
+  }
 ];
 
 // Renders a small preview image of each hero — same live-render-a-snapshot
 // approach as the asset wiki's thumbnails (tools/asset-wiki/app.js), just
 // inline here since this is a one-time render of 5 known models rather
 // than an on-demand catalog.
-var THUMB_SIZE = 160;
+// Matches the .char-portrait CSS aspect-ratio (3/4) — a vertical card, not
+// the square asset-wiki-style thumbnail this was originally adapted from.
+var THUMB_WIDTH = 180;
+var THUMB_HEIGHT = 240;
 function renderCharacterThumbnails() {
   var renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, preserveDrawingBuffer: true });
-  renderer.setSize(THUMB_SIZE, THUMB_SIZE);
+  renderer.setSize(THUMB_WIDTH, THUMB_HEIGHT);
   var scene = new THREE.Scene();
-  var camera = new THREE.PerspectiveCamera(35, 1, 0.05, 500);
+  var camera = new THREE.PerspectiveCamera(35, THUMB_WIDTH / THUMB_HEIGHT, 0.05, 500);
   scene.add(new THREE.AmbientLight(0xffffff, 2.0));
   var dirLight = new THREE.DirectionalLight(0xffffff, 1.6);
   dirLight.position.set(3, 5, 4);
   scene.add(dirLight);
 
+  // three.js's Box3.setFromObject() only ever reads a mesh's raw, unposed
+  // geometry.boundingBox transformed by its own matrixWorld — it has no
+  // special case for SkinnedMesh, so it completely ignores GPU bone
+  // skinning. These character rigs render in a default pose (arms spread,
+  // set by the GLTF's baked bone transforms) that's nothing like their
+  // bind-pose geometry, so a Box3-based fit was measuring the wrong shape
+  // entirely: a Box3Helper overlay confirmed it landed as a tiny box
+  // around the waist while the actual (visible, skinned) head and arms
+  // extended far outside it — cropping the real render regardless of how
+  // correct the frustum-fit math around that wrong box was.
+  //
+  // Fix: measure the ACTUAL rendered silhouette instead of trusting mesh
+  // geometry. Render once at a generous, guaranteed-not-to-crop guess
+  // (any reasonable target/distance works — this only has to not clip),
+  // then read the canvas pixels back to find the real on-screen bounding
+  // box of the (alpha>0) character. Convert that pixel box back to world
+  // units at the guess distance to get the character's true center offset
+  // and half-extents, then place the final camera to fill FRAME_FILL of
+  // the frame around that corrected center.
+  var FRAME_FILL = 0.88;
+  function silhouetteBBoxFraction(target, distance, dir) {
+    camera.position.copy(target).addScaledVector(dir, distance);
+    camera.near = distance * 0.01;
+    camera.far = distance * 20;
+    camera.updateProjectionMatrix();
+    camera.lookAt(target);
+    renderer.render(scene, camera);
+
+    var off = document.createElement('canvas');
+    off.width = THUMB_WIDTH;
+    off.height = THUMB_HEIGHT;
+    var ctx = off.getContext('2d');
+    ctx.drawImage(renderer.domElement, 0, 0);
+    var data = ctx.getImageData(0, 0, THUMB_WIDTH, THUMB_HEIGHT).data;
+    var minX = THUMB_WIDTH, maxX = 0, minY = THUMB_HEIGHT, maxY = 0, found = false;
+    for (var y = 0; y < THUMB_HEIGHT; y++) {
+      for (var x = 0; x < THUMB_WIDTH; x++) {
+        if (data[(y * THUMB_WIDTH + x) * 4 + 3] > 10) {
+          found = true;
+          if (x < minX) minX = x;
+          if (x > maxX) maxX = x;
+          if (y < minY) minY = y;
+          if (y > maxY) maxY = y;
+        }
+      }
+    }
+    if (!found) return null;
+    return { fracLeft: minX / THUMB_WIDTH, fracRight: (maxX + 1) / THUMB_WIDTH, fracTop: minY / THUMB_HEIGHT, fracBottom: (maxY + 1) / THUMB_HEIGHT };
+  }
+
   function frame(obj) {
-    var box = new THREE.Box3().setFromObject(obj);
-    var center = box.getCenter(new THREE.Vector3());
-    var size = box.getSize(new THREE.Vector3());
     var dir = new THREE.Vector3(0, 0.15, 1).normalize();
-    // Fit to height/width only, not the full 3D bounding sphere — a sphere
-    // conflates depth (front-to-back) into the framing distance too, and
-    // that made Mage's robe (which flares noticeably front-to-back, unlike
-    // the other 4 heroes) look shrunken relative to them despite having a
-    // near-identical actual height/width. Depth only matters for the
-    // near/far clip planes here, handled separately below, so it's
-    // deliberately excluded from the sizing math. All 5 heroes share the
-    // same T-pose arm span (half-width ~0.97), so width rarely ends up the
-    // binding constraint, but max() keeps this correct if a future model
-    // is unusually wide rather than tall. 15% padding beyond the bare
-    // minimum needed for the taller of the two to fit.
-    // tan, not sin: sin(halfFOV) is the correct denominator for fitting a
-    // *sphere* (its silhouette edge is tangent to the view rays, an asin
-    // relationship) — this is a flat vertical/horizontal extent measured
-    // at the object's own center distance, a plain right-triangle tan
-    // relationship. Using sin here (a leftover from the sphere-fit version
-    // of this function) underestimates the distance needed and crops
-    // heads again, just like the original bug this replaced.
-    var halfFovRad = (camera.fov / 2) * (Math.PI / 180);
-    var half = Math.max(size.y / 2, size.x / 2);
-    var distance = (half / Math.tan(halfFovRad)) * 1.15;
-    camera.position.copy(center).addScaledVector(dir, distance);
+    camera.up.set(0, 1, 0);
+    var halfVFovRad = (camera.fov / 2) * (Math.PI / 180);
+    var halfHFovRad = Math.atan(camera.aspect * Math.tan(halfVFovRad));
+
+    // Guess: model root is at the origin with feet near y=0 (standard for
+    // a game-ready rig), aim roughly chest-height, zoom out generously —
+    // distance 8 comfortably contains every one of these 5 characters at
+    // any pose regardless of exactly where their true center turns out to be.
+    var guessTarget = new THREE.Vector3(0, 0.9, 0);
+    var guessDistance = 8;
+    var silhouette = silhouetteBBoxFraction(guessTarget, guessDistance, dir);
+    if (!silhouette) return; // nothing rendered (shouldn't happen) — leave camera as-is
+
+    // Convert the pixel-space silhouette box back to world units at the
+    // guess distance, to get the character's real center offset and
+    // half-extents (this is what Box3 was supposed to give us).
+    var worldHalfH = guessDistance * Math.tan(halfVFovRad);
+    var worldHalfW = guessDistance * Math.tan(halfHFovRad);
+    var worldTop = (1 - 2 * silhouette.fracTop) * worldHalfH;
+    var worldBottom = (1 - 2 * silhouette.fracBottom) * worldHalfH;
+    var worldLeft = (2 * silhouette.fracLeft - 1) * worldHalfW;
+    var worldRight = (2 * silhouette.fracRight - 1) * worldHalfW;
+    var centerOffsetY = (worldTop + worldBottom) / 2, halfHeight = (worldTop - worldBottom) / 2;
+    var centerOffsetX = (worldLeft + worldRight) / 2, halfWidth = (worldRight - worldLeft) / 2;
+
+    var distance = Math.max(
+      halfHeight / (FRAME_FILL * Math.tan(halfVFovRad)),
+      halfWidth / (FRAME_FILL * Math.tan(halfHFovRad))
+    );
+    var target = new THREE.Vector3(guessTarget.x + centerOffsetX, guessTarget.y + centerOffsetY, guessTarget.z);
+
+    camera.position.copy(target).addScaledVector(dir, distance);
     camera.near = distance * 0.05;
     camera.far = distance * 10;
     camera.updateProjectionMatrix();
-    camera.lookAt(center);
+    camera.lookAt(target);
   }
 
   // Keeps the loaded model on each entry (c.model), not just the
   // snapshot — startGame() reuses it directly instead of fetching and
-  // re-parsing the same GLB a second time for the chosen hero.
+  // re-parsing the same GLB a second time for the chosen hero. Weapons are
+  // attached before the snapshot so the portrait shows each hero with
+  // their actual gear, and stay attached afterward (startGame() doesn't
+  // need to attach them a second time).
   return Promise.all(CHARACTERS.map(function (c) {
     return loadModel(c.path).then(function (model) {
-      scene.add(model);
-      frame(model);
-      renderer.render(scene, camera);
-      c.thumbnail = renderer.domElement.toDataURL('image/png');
-      c.model = model;
-      scene.remove(model);
+      return attachWeapons(model, CLASS_WEAPONS[c.id] || []).then(function () {
+        scene.add(model);
+        frame(model);
+        renderer.render(scene, camera);
+        c.thumbnail = renderer.domElement.toDataURL('image/png');
+        c.model = model;
+        scene.remove(model);
+      });
     });
   }));
 }
@@ -200,10 +361,12 @@ function selectCharacter() {
         var card = document.createElement('button');
         card.type = 'button';
         card.className = 'char-card';
-        card.innerHTML = '<img class="char-portrait" src="' + c.thumbnail + '" alt="' + c.label + '"><span class="char-name">' + c.label + '</span>';
+        card.innerHTML = '<img class="char-portrait" src="' + c.thumbnail + '" alt="' + c.label + '">' +
+          '<span class="char-name">' + c.label + '</span>' +
+          '<div class="char-power">' + c.power + '</div>';
         card.addEventListener('click', function () {
           modal.classList.add('hidden');
-          resolve(c.model);
+          resolve(c);
         });
         grid.appendChild(card);
       });
@@ -281,7 +444,7 @@ function loadCustomLevelFromStorage() {
   return result.ok ? result.data : null;
 }
 
-async function startGame(mazeData, characterModel) {
+async function startGame(mazeData, character) {
   var check = window.MazeSchema.validateMazeData(mazeData);
   if (!check.valid) { console.error('Invalid level:', check.errors); return; }
 
@@ -360,11 +523,12 @@ async function startGame(mazeData, characterModel) {
   var exitFlagTemplate = await loadModel('assets/kaykit-dungeon/gltf/banner_red.gltf');
   // Still named knightTemplate for minimal diff against the rest of this
   // function — it's actually whichever hero was chosen on the character
-  // select screen. selectCharacter() already loaded it once for the
-  // thumbnail, so this reuses that model directly instead of fetching and
-  // re-parsing the same GLB again; falls back to loading the Knight fresh
-  // if none was passed in (e.g. startGame() called directly).
-  var knightTemplate = characterModel || await loadModel('assets/kaykit-adventurers/characters/Knight.glb');
+  // select screen. selectCharacter() already loaded that model (and
+  // attached its weapons) once for the portrait, so this reuses it
+  // directly instead of fetching and re-parsing the same GLB again; falls
+  // back to a fresh Knight with no weapons if none was passed in (e.g.
+  // startGame() called directly).
+  var knightTemplate = (character && character.model) || await loadModel('assets/kaykit-adventurers/characters/Knight.glb');
   knightTemplate.scale.set(PLAYER_SCALE, PLAYER_SCALE, PLAYER_SCALE);
 
   Object.keys(wallTemplates).map(function (k) { return wallTemplates[k]; })
@@ -421,6 +585,21 @@ async function startGame(mazeData, characterModel) {
   });
   var lastLitTorchIndex = -1;
 
+  // Shared by the ordinary walk-up-and-light proximity check below and the
+  // Ranger's shoot-through-walls ability — both just need "make torch idx
+  // lit", so the actual mesh-swap/sound logic lives in one place.
+  function igniteTorch(idx) {
+    var torchObj = torchObjects[idx];
+    torchObj.lit = true;
+    torchObj.light.intensity = 15;
+    scene.remove(torchObj.mesh);
+    torchObj.mesh = torchLitTemplate.clone();
+    torchObj.mesh.position.set(torchObj.data.x, 0, torchObj.data.y);
+    scene.add(torchObj.mesh);
+    lastLitTorchIndex = idx;
+    playClip('kenney-music-jingles/8-Bit jingles/jingles_NES00.ogg');
+  }
+
   var EXIT_FLAG_SCALE = 0.4;
   var exitFlagMesh = exitFlagTemplate.clone();
   exitFlagMesh.scale.set(EXIT_FLAG_SCALE, EXIT_FLAG_SCALE, EXIT_FLAG_SCALE);
@@ -436,6 +615,17 @@ async function startGame(mazeData, characterModel) {
   });
   var collectedCount = 0;
   var gameWon = false;
+
+  // Shared by the ordinary walk-over pickup check below and the Ranger's
+  // shoot-through-walls ability — both just need "collect item idx".
+  function collectItemAt(idx) {
+    itemMeshes[idx].collected = true;
+    scene.remove(itemMeshes[idx].mesh);
+    collectedCount++;
+    playClip('kenney-music-jingles/Pizzicato jingles/jingles_PIZZI01.ogg', null, function () {
+      playClip('kenney-rpg-audio/handleCoins.ogg');
+    });
+  }
 
   var playerPos = { x: mazeData.start.x, z: mazeData.start.y };
   window.ToonRenderer.updateFollowCamera(camera, { x: playerPos.x, y: 0, z: playerPos.z });
@@ -460,6 +650,65 @@ async function startGame(mazeData, characterModel) {
     }
   });
 
+  // --- Hero superpower (Space bar) ---------------------------------------
+  // facingDx/facingDz is a grid-snapped cardinal direction (one axis zero,
+  // the other +-1) — the only per-frame movement tracking, moveDx/moveDz
+  // below, are just the current input flags and go blank the instant the
+  // player releases the keys, so Jump/Ranger's "which way am I facing"
+  // needs its own persistent copy. Diagonal input snaps to the z-axis
+  // (forward/back) so Jump and the Ranger's shot always travel along a
+  // single grid line rather than an ambiguous diagonal.
+  var ability = character && character.ability;
+  var abilityState = { readyAt: 0, activeUntil: 0 };
+  var facingDx = 0, facingDz = -1; // default: facing forward/north (W)
+
+  var abilityIconEl = document.getElementById('abilityIcon');
+  var abilityGlyphEl = document.getElementById('abilityIconGlyph');
+  var abilityCooldownEl = document.getElementById('abilityCooldownText');
+  if (ability) {
+    abilityIconEl.classList.remove('hidden');
+    abilityIconEl.classList.add('ready');
+    abilityGlyphEl.textContent = ability.glyph;
+  }
+
+  function doJump() {
+    var gx = Math.round(playerPos.x) + facingDx * 2;
+    var gz = Math.round(playerPos.z) + facingDz * 2;
+    // Only lands if the far cell is floor — a wall (or the maze boundary)
+    // in the way just wastes the cooldown, matching a real "leap and
+    // faceplant" risk rather than silently no-opping.
+    if (window.MazeSchema.isWalkable(mazeData, gx, gz)) {
+      playerPos.x = gx;
+      playerPos.z = gz;
+    }
+  }
+
+  function doRangerShot() {
+    for (var step = 1; step <= 6; step++) {
+      var gx = Math.round(playerPos.x) + facingDx * step;
+      var gz = Math.round(playerPos.z) + facingDz * step;
+      var torchIdx = torchObjects.findIndex(function (t) { return !t.lit && t.data.x === gx && t.data.y === gz; });
+      if (torchIdx !== -1) { igniteTorch(torchIdx); return; }
+      var itemIdx = itemMeshes.findIndex(function (it) { return !it.collected && it.data.x === gx && it.data.y === gz; });
+      if (itemIdx !== -1) { collectItemAt(itemIdx); return; }
+    }
+  }
+
+  function triggerAbility() {
+    if (!ability || gameWon) return;
+    var now = performance.now();
+    if (now < abilityState.readyAt) return; // still on cooldown
+    abilityState.readyAt = now + ability.cooldownMs;
+    if (ability.kind === 'duration') abilityState.activeUntil = now + ability.durationMs;
+    if (ability.name === 'jump') doJump();
+    else if (ability.name === 'ranger-shot') doRangerShot();
+    // sprint / seeing-beyond / invisible have no one-shot effect here — the
+    // game loop below reads abilityState.activeUntil every frame instead.
+  }
+  window.addEventListener('keydown', function (e) {
+    if (e.code === 'Space') { e.preventDefault(); triggerAbility(); }
+  });
+
   var clock = new THREE.Clock();
   var PLAYER_SPEED = 2.5;
   var PLAYER_RADIUS = 0.3;
@@ -477,8 +726,11 @@ async function startGame(mazeData, characterModel) {
   function animate() {
     requestAnimationFrame(animate);
     var dt = clock.getDelta();
+    var now = performance.now();
+    var abilityActive = !!ability && ability.kind === 'duration' && now < abilityState.activeUntil;
 
-    var intended = window.PlayerController.computeMove({ x: playerPos.x, z: playerPos.z }, input, dt, PLAYER_SPEED);
+    var moveSpeed = PLAYER_SPEED * ((ability && ability.name === 'sprint' && abilityActive) ? 2 : 1);
+    var intended = window.PlayerController.computeMove({ x: playerPos.x, z: playerPos.z }, input, dt, moveSpeed);
     var resolved = window.PlayerController.resolveCollision({ x: playerPos.x, z: playerPos.z }, intended, PLAYER_RADIUS, mazeData);
     playerPos.x = resolved.x;
     playerPos.z = resolved.z;
@@ -488,9 +740,35 @@ async function startGame(mazeData, characterModel) {
     var moveDz = (input.back ? 1 : 0) - (input.forward ? 1 : 0);
     if (moveDx !== 0 || moveDz !== 0) {
       playerMesh.rotation.y = Math.atan2(moveDx, moveDz);
+      // Grid-snapped facing for Jump/Ranger — see the comment where these
+      // vars are declared. z-axis wins ties so diagonal input still picks
+      // one clean cardinal direction.
+      if (moveDz !== 0) { facingDx = 0; facingDz = moveDz; }
+      else { facingDx = moveDx; facingDz = 0; }
     }
     setWalking(moveDx !== 0 || moveDz !== 0);
     mixer.update(dt);
+
+    if (ability && ability.name === 'invisible') {
+      var invisOpacity = abilityActive ? 0.4 : 1;
+      collectMaterials(playerMesh).forEach(function (m) { m.transparent = true; m.opacity = invisOpacity; });
+    }
+
+    if (ability) {
+      var cooldownRemainMs = abilityState.readyAt - now;
+      if (abilityActive) {
+        abilityIconEl.classList.add('active');
+        abilityIconEl.classList.remove('ready');
+        abilityCooldownEl.textContent = '';
+      } else if (cooldownRemainMs > 0) {
+        abilityIconEl.classList.remove('active', 'ready');
+        abilityCooldownEl.textContent = Math.ceil(cooldownRemainMs / 1000) + 's';
+      } else {
+        abilityIconEl.classList.add('ready');
+        abilityIconEl.classList.remove('active');
+        abilityCooldownEl.textContent = '';
+      }
+    }
     window.ToonRenderer.updateFollowCamera(camera, { x: playerPos.x, y: 0, z: playerPos.z });
     playerLight.position.set(playerPos.x, 0.6, playerPos.z);
 
@@ -500,15 +778,7 @@ async function startGame(mazeData, characterModel) {
       TORCH_LIGHT_RADIUS
     );
     if (nearbyIdx !== -1 && !torchObjects[nearbyIdx].lit) {
-      var torchObj = torchObjects[nearbyIdx];
-      torchObj.lit = true;
-      torchObj.light.intensity = 15;
-      scene.remove(torchObj.mesh);
-      torchObj.mesh = torchLitTemplate.clone();
-      torchObj.mesh.position.set(torchObj.data.x, 0, torchObj.data.y);
-      scene.add(torchObj.mesh);
-      lastLitTorchIndex = nearbyIdx;
-      playClip('kenney-music-jingles/8-Bit jingles/jingles_NES00.ogg');
+      igniteTorch(nearbyIdx);
     }
 
     if (!gameWon) {
@@ -518,12 +788,7 @@ async function startGame(mazeData, characterModel) {
         ITEM_PICKUP_RADIUS
       );
       if (itemIdx !== -1 && !itemMeshes[itemIdx].collected) {
-        itemMeshes[itemIdx].collected = true;
-        scene.remove(itemMeshes[itemIdx].mesh);
-        collectedCount++;
-        playClip('kenney-music-jingles/Pizzicato jingles/jingles_PIZZI01.ogg', null, function () {
-          playClip('kenney-rpg-audio/handleCoins.ogg');
-        });
+        collectItemAt(itemIdx);
       }
 
       // Winning only requires reaching the exit — the "all items"/"all
@@ -547,9 +812,11 @@ async function startGame(mazeData, characterModel) {
 
     document.getElementById('hud').textContent =
       gameWon ? 'Cleared! Collected ' + collectedCount + '/' + mazeData.items.length + ' coins'
-              : 'Coins ' + collectedCount + '/' + mazeData.items.length + ' — WASD to move, E to return to last torch';
+              : 'Coins ' + collectedCount + '/' + mazeData.items.length + ' — WASD to move, E to return to last torch' +
+                (ability ? ', Space for ' + character.label + '’s power' : '');
 
-    var fowCenters = [{ x: playerPos.x, z: playerPos.z, r: PLAYER_VISIBILITY_RADIUS }];
+    var playerVisRadius = PLAYER_VISIBILITY_RADIUS * ((ability && ability.name === 'seeing-beyond' && abilityActive) ? 2 : 1);
+    var fowCenters = [{ x: playerPos.x, z: playerPos.z, r: playerVisRadius }];
     torchObjects.forEach(function (t) {
       if (t.lit) fowCenters.push({ x: t.data.x, z: t.data.y, r: TORCH_VISIBILITY_RADIUS });
     });
