@@ -146,17 +146,29 @@ function renderCharacterThumbnails() {
   function frame(obj) {
     var box = new THREE.Box3().setFromObject(obj);
     var center = box.getCenter(new THREE.Vector3());
-    var sphere = box.getBoundingSphere(new THREE.Sphere());
-    var radius = Math.max(sphere.radius, 0.05);
+    var size = box.getSize(new THREE.Vector3());
     var dir = new THREE.Vector3(0, 0.15, 1).normalize();
-    // Distance needed for the whole bounding sphere to fit inside the
-    // camera's vertical FOV, not an arbitrary multiple of the radius —
-    // these are T-posed characters with arms spread wide, so the sphere is
-    // much bigger than a compact prop and a flat "radius * 2.3" (which
-    // worked fine for asset-wiki's prop thumbnails) cropped heads and
-    // hands here. 15% padding beyond the bare minimum.
+    // Fit to height/width only, not the full 3D bounding sphere — a sphere
+    // conflates depth (front-to-back) into the framing distance too, and
+    // that made Mage's robe (which flares noticeably front-to-back, unlike
+    // the other 4 heroes) look shrunken relative to them despite having a
+    // near-identical actual height/width. Depth only matters for the
+    // near/far clip planes here, handled separately below, so it's
+    // deliberately excluded from the sizing math. All 5 heroes share the
+    // same T-pose arm span (half-width ~0.97), so width rarely ends up the
+    // binding constraint, but max() keeps this correct if a future model
+    // is unusually wide rather than tall. 15% padding beyond the bare
+    // minimum needed for the taller of the two to fit.
+    // tan, not sin: sin(halfFOV) is the correct denominator for fitting a
+    // *sphere* (its silhouette edge is tangent to the view rays, an asin
+    // relationship) — this is a flat vertical/horizontal extent measured
+    // at the object's own center distance, a plain right-triangle tan
+    // relationship. Using sin here (a leftover from the sphere-fit version
+    // of this function) underestimates the distance needed and crops
+    // heads again, just like the original bug this replaced.
     var halfFovRad = (camera.fov / 2) * (Math.PI / 180);
-    var distance = (radius / Math.sin(halfFovRad)) * 1.15;
+    var half = Math.max(size.y / 2, size.x / 2);
+    var distance = (half / Math.tan(halfFovRad)) * 1.15;
     camera.position.copy(center).addScaledVector(dir, distance);
     camera.near = distance * 0.05;
     camera.far = distance * 10;
