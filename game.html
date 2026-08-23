@@ -46,6 +46,30 @@
     background: #33333b; color: #eee; border: 1px solid #454550; border-radius: 6px;
     padding: 8px 20px; cursor: pointer; font-size: 13px;
   }
+
+  #charSelectModal {
+    position: fixed; inset: 0; background: rgba(0,0,0,0.85);
+    display: flex; align-items: center; justify-content: center; z-index: 15;
+    font-family: 'Manrope', sans-serif;
+  }
+  #charSelectModal.hidden { display: none; }
+  #charSelectPanel {
+    background: #1c1a16; border: 1px solid #4a4030; border-radius: 10px;
+    padding: 28px 32px; text-align: center; color: #ece1c8;
+  }
+  #charSelectPanel h2 { margin: 0 0 20px; font-size: 20px; font-weight: 700; }
+  #charSelectGrid { display: flex; gap: 12px; }
+  .char-card {
+    width: 110px; background: linear-gradient(180deg, rgba(40,32,22,0.7), rgba(16,13,10,0.85));
+    border: 2px solid rgba(236,225,200,0.16); border-radius: 8px; padding: 14px 8px;
+    cursor: pointer; color: #ece1c8; font-family: inherit;
+    transition: border-color 0.15s ease, box-shadow 0.15s ease, transform 0.15s ease;
+  }
+  .char-card:hover {
+    border-color: #ffab52; box-shadow: 0 0 16px -2px #ffab52; transform: translateY(-2px);
+  }
+  .char-card .char-icon { font-size: 30px; display: block; margin-bottom: 8px; }
+  .char-card .char-name { font-size: 13px; font-weight: 600; }
 </style>
 <script type="importmap">
 {
@@ -59,6 +83,13 @@
 <body>
 <button id="quitBtn" type="button">← Quit</button>
 <div id="hud">Loading...</div>
+
+<div id="charSelectModal">
+  <div id="charSelectPanel">
+    <h2>Choose your hero</h2>
+    <div id="charSelectGrid"></div>
+  </div>
+</div>
 
 <div id="winModal" class="hidden">
   <div id="winPanel">
@@ -81,6 +112,35 @@ import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 var gltfLoader = new GLTFLoader();
 function loadModel(path) {
   return gltfLoader.loadAsync(path).then(function (gltf) { return gltf.scene; });
+}
+
+// Character select — shown once per level load, before the maze itself
+// starts. All 5 are kaykit-adventurers models sharing the same rig, so the
+// existing Rig_Medium idle/walk clips apply to whichever one is picked.
+var CHARACTERS = [
+  { id: 'knight', label: 'Knight', icon: '🛡️', path: 'assets/kaykit-adventurers/characters/Knight.glb' },
+  { id: 'barbarian', label: 'Barbarian', icon: '🪓', path: 'assets/kaykit-adventurers/characters/Barbarian.glb' },
+  { id: 'mage', label: 'Mage', icon: '🔮', path: 'assets/kaykit-adventurers/characters/Mage.glb' },
+  { id: 'ranger', label: 'Ranger', icon: '🏹', path: 'assets/kaykit-adventurers/characters/Ranger.glb' },
+  { id: 'rogue', label: 'Rogue', icon: '🗡️', path: 'assets/kaykit-adventurers/characters/Rogue.glb' }
+];
+
+function selectCharacter() {
+  var modal = document.getElementById('charSelectModal');
+  var grid = document.getElementById('charSelectGrid');
+  return new Promise(function (resolve) {
+    CHARACTERS.forEach(function (c) {
+      var card = document.createElement('button');
+      card.type = 'button';
+      card.className = 'char-card';
+      card.innerHTML = '<span class="char-icon">' + c.icon + '</span><span class="char-name">' + c.label + '</span>';
+      card.addEventListener('click', function () {
+        modal.classList.add('hidden');
+        resolve(c.path);
+      });
+      grid.appendChild(card);
+    });
+  });
 }
 
 var winModal = document.getElementById('winModal');
@@ -152,7 +212,7 @@ function loadCustomLevelFromStorage() {
   return result.ok ? result.data : null;
 }
 
-async function startGame(mazeData) {
+async function startGame(mazeData, characterPath) {
   var check = window.MazeSchema.validateMazeData(mazeData);
   if (!check.valid) { console.error('Invalid level:', check.errors); return; }
 
@@ -229,7 +289,11 @@ async function startGame(mazeData) {
   var torchLitTemplate = await loadModel('assets/kaykit-dungeon/gltf/torch_lit.gltf');
   var coinTemplate = await loadModel('assets/kaykit-dungeon/gltf/coin.gltf');
   var exitFlagTemplate = await loadModel('assets/kaykit-dungeon/gltf/banner_red.gltf');
-  var knightTemplate = await loadModel('assets/kaykit-adventurers/characters/Knight.glb');
+  // Still named knightTemplate for minimal diff against the rest of this
+  // function — it's actually whichever hero was chosen on the character
+  // select screen (falls back to the Knight if none was passed in, e.g.
+  // startGame() called directly).
+  var knightTemplate = await loadModel(characterPath || 'assets/kaykit-adventurers/characters/Knight.glb');
   knightTemplate.scale.set(PLAYER_SCALE, PLAYER_SCALE, PLAYER_SCALE);
 
   Object.keys(wallTemplates).map(function (k) { return wallTemplates[k]; })
@@ -436,20 +500,26 @@ document.getElementById('quitBtn').addEventListener('click', function () {
 });
 
 var requestedId = new URLSearchParams(window.location.search).get('level');
-if (requestedId === 'custom') {
-  var customData = loadCustomLevelFromStorage();
-  if (customData) {
-    startGame(customData);
-  } else {
+
+function loadLevelData() {
+  if (requestedId === 'custom') {
+    var customData = loadCustomLevelFromStorage();
+    if (customData) return Promise.resolve(customData);
     alert('No custom level found — pick a level again.');
     window.location.href = 'levels.html';
+    return new Promise(function () {}); // navigating away — never resolves
   }
-} else {
-  loadManifest().then(function (manifest) {
+  return loadManifest().then(function (manifest) {
     var entry = manifest.find(function (e) { return e.id === requestedId; }) || manifest[0];
     return loadLevelFile(entry.file);
-  }).then(startGame);
+  });
 }
+
+// Level fetch and character selection happen in parallel — no reason to
+// make the player wait for one before starting the other.
+Promise.all([loadLevelData(), selectCharacter()]).then(function (results) {
+  startGame(results[0], results[1]);
+});
 </script>
 </body>
 </html>
