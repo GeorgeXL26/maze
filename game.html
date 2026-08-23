@@ -671,16 +671,23 @@ async function startGame(mazeData, character) {
     abilityGlyphEl.textContent = ability.glyph;
   }
 
+  // Jump plays out as an actual hop over JUMP_DURATION_MS — a lerped
+  // horizontal path plus a sine-arc vertical lift and a squash/stretch on
+  // the mesh — rather than an instant teleport from A to B. animate()
+  // drives the interpolation every frame using jumpAnim's start time.
+  var jumpAnim = null;
+  var JUMP_DURATION_MS = 450;
+  var JUMP_HEIGHT = 0.9;
+
   function doJump() {
+    if (jumpAnim) return; // already mid-hop (shouldn't happen — cooldown outlasts the hop)
     var gx = Math.round(playerPos.x) + facingDx * 2;
     var gz = Math.round(playerPos.z) + facingDz * 2;
     // Only lands if the far cell is floor — a wall (or the maze boundary)
     // in the way just wastes the cooldown, matching a real "leap and
     // faceplant" risk rather than silently no-opping.
-    if (window.MazeSchema.isWalkable(mazeData, gx, gz)) {
-      playerPos.x = gx;
-      playerPos.z = gz;
-    }
+    if (!window.MazeSchema.isWalkable(mazeData, gx, gz)) return;
+    jumpAnim = { fromX: playerPos.x, fromZ: playerPos.z, toX: gx, toZ: gz, startMs: performance.now(), durationMs: JUMP_DURATION_MS };
   }
 
   function doRangerShot() {
@@ -729,13 +736,39 @@ async function startGame(mazeData, character) {
     var now = performance.now();
     var abilityActive = !!ability && ability.kind === 'duration' && now < abilityState.activeUntil;
 
-    var moveSpeed = PLAYER_SPEED * ((ability && ability.name === 'sprint' && abilityActive) ? 2 : 1);
-    var intended = window.PlayerController.computeMove({ x: playerPos.x, z: playerPos.z }, input, dt, moveSpeed);
-    var resolved = window.PlayerController.resolveCollision({ x: playerPos.x, z: playerPos.z }, intended, PLAYER_RADIUS, mazeData);
-    playerPos.x = resolved.x;
-    playerPos.z = resolved.z;
+    // Mid-hop: drive the lerp/arc from jumpAnim and skip ordinary
+    // WASD movement + wall collision entirely (that's the whole point —
+    // clearing a wall the player couldn't otherwise walk through).
+    var jumpT = null;
+    if (jumpAnim) {
+      jumpT = (now - jumpAnim.startMs) / jumpAnim.durationMs;
+      if (jumpT >= 1) {
+        playerPos.x = jumpAnim.toX;
+        playerPos.z = jumpAnim.toZ;
+        jumpAnim = null;
+        jumpT = null;
+      } else {
+        playerPos.x = jumpAnim.fromX + (jumpAnim.toX - jumpAnim.fromX) * jumpT;
+        playerPos.z = jumpAnim.fromZ + (jumpAnim.toZ - jumpAnim.fromZ) * jumpT;
+      }
+    }
 
-    playerMesh.position.set(playerPos.x, PLAYER_FOOT_OFFSET, playerPos.z);
+    if (!jumpAnim) {
+      var moveSpeed = PLAYER_SPEED * ((ability && ability.name === 'sprint' && abilityActive) ? 2 : 1);
+      var intended = window.PlayerController.computeMove({ x: playerPos.x, z: playerPos.z }, input, dt, moveSpeed);
+      var resolved = window.PlayerController.resolveCollision({ x: playerPos.x, z: playerPos.z }, intended, PLAYER_RADIUS, mazeData);
+      playerPos.x = resolved.x;
+      playerPos.z = resolved.z;
+    }
+
+    // Sine arc for the vertical hop (peaks at the midpoint, zero at
+    // takeoff/landing) plus a matching squash/stretch — squat-shaped at
+    // the ends, stretched tall at the apex — so it reads as a kangaroo-ish
+    // hop instead of a smooth glide.
+    var jumpLift = jumpT !== null ? Math.sin(jumpT * Math.PI) * JUMP_HEIGHT : 0;
+    var jumpStretch = jumpT !== null ? 1 + 0.15 * Math.sin(jumpT * Math.PI) : 1;
+    playerMesh.position.set(playerPos.x, PLAYER_FOOT_OFFSET + jumpLift, playerPos.z);
+    playerMesh.scale.set(PLAYER_SCALE, PLAYER_SCALE * jumpStretch, PLAYER_SCALE);
     var moveDx = (input.right ? 1 : 0) - (input.left ? 1 : 0);
     var moveDz = (input.back ? 1 : 0) - (input.forward ? 1 : 0);
     if (moveDx !== 0 || moveDz !== 0) {
@@ -746,7 +779,7 @@ async function startGame(mazeData, character) {
       if (moveDz !== 0) { facingDx = 0; facingDz = moveDz; }
       else { facingDx = moveDx; facingDz = 0; }
     }
-    setWalking(moveDx !== 0 || moveDz !== 0);
+    setWalking(jumpT === null && (moveDx !== 0 || moveDz !== 0));
     mixer.update(dt);
 
     if (ability && ability.name === 'invisible') {
