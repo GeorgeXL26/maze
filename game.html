@@ -10,7 +10,7 @@
   #hud { position: fixed; top: 10px; left: 10px; color: #fff; font-family: sans-serif; text-shadow: 0 0 4px #000; }
 
   #quitBtn {
-    position: fixed; top: 14px; right: 14px; z-index: 5;
+    position: fixed; top: 14px; right: 62px; z-index: 5;
     font-family: 'Manrope', sans-serif; font-size: 13px; font-weight: 600;
     color: #ece1c8; background: linear-gradient(180deg, rgba(30,26,20,0.85), rgba(14,12,9,0.9));
     border: 1px solid rgba(236,225,200,0.22); border-radius: 8px;
@@ -73,6 +73,7 @@
 <script src="shared/toon-renderer.js"></script>
 <script src="shared/player-controller.js"></script>
 <script src="shared/level-io.js"></script>
+<script src="shared/bgm.js"></script>
 <script type="module">
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
@@ -126,21 +127,6 @@ function playClip(relPath, durationSec, onDone) {
   } else if (onDone) {
     audio.addEventListener('ended', onDone);
   }
-  return audio;
-}
-
-// Looping background music. If the browser blocks the initial autoplay
-// attempt (no user gesture yet on the page), retry once on the player's
-// first WASD press — by then the gesture requirement is satisfied.
-function playLoopingBGM(relPath, volume) {
-  var audio = new Audio(encodeURI(AUDIO_BASE + relPath));
-  audio.loop = true;
-  audio.volume = volume;
-  var tryPlay = function () { return audio.play(); };
-  tryPlay().catch(function () {
-    var retry = function () { tryPlay().catch(function () {}); window.removeEventListener('keydown', retry); };
-    window.addEventListener('keydown', retry);
-  });
   return audio;
 }
 
@@ -386,7 +372,7 @@ async function startGame(mazeData) {
   });
 
   document.getElementById('hud').textContent = 'Torch Maze — level loaded';
-  var levelBGM = playLoopingBGM('spooky-playtime-davidkbd/DavidKBD---Spooky-Pack---Spooky-Playtime-03---Haunted-Mansion.ogg', 0.5);
+  var levelBGM = window.BGM.mount('haunted-mansion', 0.5);
   var levelStartTime = performance.now();
 
   function animate() {
